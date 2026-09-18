@@ -20,6 +20,8 @@ export type Wall = {
   to: Id
   heightMm: number
   thicknessMm: number
+  /** Strona, w którą odkłada się grubość od linii P0->P1 (widok z góry, w prawo od wektora ruchu = 1). Domyślnie 1 dla starych plików. */
+  thicknessSide?: 1 | -1
   status: Completeness
   state?: ElementState
   note?: string

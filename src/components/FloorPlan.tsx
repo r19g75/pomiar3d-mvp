@@ -30,9 +30,16 @@ export function FloorPlan({ area, onSection, selectedWallId, onWallSelect, selec
           const stateCls = wall.state ? `state-${wall.state}` : ''
           const mx = (tx(a.position.x) + tx(c.position.x)) / 2; const my = (ty(a.position.y) + ty(c.position.y)) / 2
           const selected = wall.id === selectedWallId
+          const dxw = c.position.x - a.position.x; const dyw = c.position.y - a.position.y
+          const lenw = Math.hypot(dxw, dyw) || 1
+          const nxw = -dyw / lenw; const nyw = dxw / lenw
+          const side = wall.thicknessSide ?? 1
+          const midW = { x: (a.position.x + c.position.x) / 2, y: (a.position.y + c.position.y) / 2 }
+          const tickW = { x: midW.x + nxw * side * 220, y: midW.y + nyw * side * 220 }
           return <g key={wall.id} className="wall-group" onClick={() => onWallSelect(wall.id)}>
             <line className="wall-hit" x1={tx(a.position.x)} y1={ty(a.position.y)} x2={tx(c.position.x)} y2={ty(c.position.y)} />
             <line className={`wall ${cls} ${stateCls} ${selected ? 'selected' : ''}`} x1={tx(a.position.x)} y1={ty(a.position.y)} x2={tx(c.position.x)} y2={ty(c.position.y)} />
+            <line className="wall-thickness-tick" x1={mx} y1={my} x2={tx(tickW.x)} y2={ty(tickW.y)} />
             <text x={mx} y={my - 55} className="svg-label">{wall.id} · {Math.round(wallLength(wall, points))}</text>
             {wall.status === 'incomplete' && <text x={mx} y={my + 120} className="svg-missing">?</text>}
           </g>

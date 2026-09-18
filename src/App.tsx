@@ -134,6 +134,20 @@ export default function App() {
     })
   }
 
+  const reverseWallSide = (wallId: string) => {
+    updateArea((a) => {
+      const wall = a.walls.find((w) => w.id === wallId)
+      if (!wall) return a
+      const oldSide = wall.thicknessSide ?? 1
+      const newSide: 1 | -1 = oldSide === 1 ? -1 : 1
+      const walls = a.walls.map((w) => w.id === wallId ? { ...w, thicknessSide: newSide } : w)
+      return addHistory({ ...a, walls }, {
+        action: 'updated', entityType: 'wall', entityId: wallId,
+        summary: `${wallId}: strona grubości ${oldSide === 1 ? 'A' : 'B'} → ${newSide === 1 ? 'A' : 'B'}`
+      })
+    })
+  }
+
   const addControlMeasurement = (wallId: string, valueMm: number) => {
     updateArea((a) => {
       const wall = a.walls.find((w) => w.id === wallId)
@@ -300,6 +314,7 @@ export default function App() {
                   onSave={(patch) => saveWallFields(selectedWall.id, patch)}
                   onControlMeasure={(v) => addControlMeasurement(selectedWall.id, v)}
                   onApplyMeasurement={(v) => applyMeasurementToWall(selectedWall.id, v)}
+                  onReverseSide={() => reverseWallSide(selectedWall.id)}
                 />
               )}
               {selectedPoint && (

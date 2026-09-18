@@ -5,13 +5,14 @@ import { pointMap, wallLength } from '../domain/geometry'
 const STATE_LABEL: Record<ElementState, string> = { existing: 'istniejąca', reconstructed: 'odtworzona', proposed: 'projektowana' }
 const STATES: ElementState[] = ['existing', 'reconstructed', 'proposed']
 
-export function WallPanel({ area, wall, startInEdit, onSave, onControlMeasure, onApplyMeasurement, onClose }: {
+export function WallPanel({ area, wall, startInEdit, onSave, onControlMeasure, onApplyMeasurement, onReverseSide, onClose }: {
   area: Area
   wall: Wall
   startInEdit: boolean
   onSave: (patch: { heightMm: number; thicknessMm: number; state: ElementState }) => void
   onControlMeasure: (valueMm: number) => void
   onApplyMeasurement: (valueMm: number) => void
+  onReverseSide: () => void
   onClose: () => void
 }) {
   const points = pointMap(area)
@@ -63,6 +64,8 @@ export function WallPanel({ area, wall, startInEdit, onSave, onControlMeasure, o
       {hasDiff && (
         <div className="wall-info-row"><span>Pomiar kontrolny</span><strong>{lastValue} mm · różnica {diff > 0 ? '+' : ''}{diff} mm</strong></div>
       )}
+      <div className="wall-info-row"><span>Strona grubości</span><strong>{(wall.thicknessSide ?? 1) === 1 ? 'A' : 'B'}</strong></div>
+      <button className="secondary wide" onClick={onReverseSide}>Odwróć stronę ściany</button>
       {!editing ? (
         <>
           <div className="wall-info-row"><span>Wysokość</span><strong>{wall.heightMm} mm</strong></div>
