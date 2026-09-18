@@ -14,7 +14,7 @@ export default defineConfig({
         short_name: 'Pomiar3D',
         description: 'Offline-first rejestrator pomiarów pomieszczeń dla Blendera',
         theme_color: '#111827',
-        background_color: '#f8fafc',
+        background_color: '#0b1120',
         display: 'standalone',
         orientation: 'any',
         icons: [
