@@ -216,7 +216,11 @@ export default function App() {
                 selectedPointId={selectedPointId}
                 onPointSelect={selectPoint}
               />
-              <button className={wallEditMode ? 'secondary wall-mode-toggle active' : 'secondary wall-mode-toggle'} onClick={() => setWallEditMode((v) => !v)}>
+              <button className={wallEditMode ? 'secondary wall-mode-toggle active' : 'secondary wall-mode-toggle'} onClick={() => {
+                setWallEditMode((v) => !v)
+                setSelectedWallId(undefined)
+                setSelectedPointId(undefined)
+              }}>
                 {wallEditMode ? 'Tryb: Modyfikacja (tap = edytuj)' : 'Tryb: Podgląd (tap = info)'}
               </button>
               {selectedWall && (
