@@ -25,6 +25,22 @@ export type Wall = {
   note?: string
 }
 
+export type ShapeKind = 'rectangle' | 'circle'
+
+export type Shape = {
+  id: Id
+  kind: ShapeKind
+  center: Vec3
+  widthMm?: number
+  depthMm?: number
+  rotationDeg?: number
+  diameterMm?: number
+  heightMm: number
+  status: Completeness
+  state?: ElementState
+  note?: string
+}
+
 export type SectionPoint = {
   id: Id
   offsetMm: number
@@ -70,7 +86,7 @@ export type HistoryEntry = {
   createdAt: string
   sessionId?: Id
   action: 'created' | 'updated' | 'measured' | 'session' | 'imported'
-  entityType: 'area' | 'point' | 'wall' | 'section' | 'measurement' | 'session' | 'project'
+  entityType: 'area' | 'point' | 'wall' | 'shape' | 'section' | 'measurement' | 'session' | 'project'
   entityId?: Id
   summary: string
 }
@@ -86,6 +102,7 @@ export type Area = {
   activeSessionId?: Id
   points: Point3D[]
   walls: Wall[]
+  shapes: Shape[]
   sections: Section[]
   measurements: Measurement[]
   sessions: MeasurementSession[]
@@ -107,6 +124,15 @@ export type Project = {
 export const nowIso = () => new Date().toISOString()
 export const newId = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
 
+export function nextElementId(existingIds: string[], prefix: string): string {
+  let max = -1
+  for (const id of existingIds) {
+    const m = new RegExp(`^${prefix}(\\d+)$`).exec(id)
+    if (m) max = Math.max(max, Number(m[1]))
+  }
+  return `${prefix}${max + 1}`
+}
+
 export function makeEmptyArea(name: string, kind: AreaKind = 'room'): Area {
   const now = nowIso()
   const sessionId = newId('S')
@@ -120,6 +146,7 @@ export function makeEmptyArea(name: string, kind: AreaKind = 'room'): Area {
     activeSessionId: sessionId,
     points: [{ id: 'P0', position: { x: 0, y: 0, z: 0 }, source: 'measured', state: 'existing' }],
     walls: [],
+    shapes: [],
     sections: [],
     measurements: [],
     sessions: [{ id: sessionId, name: 'Sesja 1', startedAt: now }],
@@ -151,6 +178,9 @@ export function makeDemoProject(): Project {
       { id: 'W02', from: 'P1', to: 'P2', heightMm: 2638, thicknessMm: 120, status: 'measured', state: 'existing' },
       { id: 'W03', from: 'P2', to: 'P3', heightMm: 2638, thicknessMm: 120, status: 'derived', state: 'existing' },
       { id: 'W04', from: 'P3', to: 'P0', heightMm: 2638, thicknessMm: 120, status: 'incomplete', state: 'existing' }
+    ],
+    shapes: [
+      { id: 'R01', kind: 'rectangle', center: { x: 2413, y: 1587, z: 0 }, widthMm: 200, depthMm: 200, rotationDeg: 0, heightMm: 2638, status: 'measured', state: 'existing', note: 'słupek konstrukcyjny' }
     ],
     sections: [
       {
@@ -200,6 +230,7 @@ export function makeDemoProject(): Project {
       { id: 'B02', from: 'T1', to: 'T2', heightMm: 1050, thicknessMm: 40, status: 'incomplete', state: 'reconstructed', note: 'brakujący odcinek do odtworzenia' },
       { id: 'B03', from: 'T2', to: 'T3', heightMm: 1050, thicknessMm: 40, status: 'derived', state: 'reconstructed', note: 'odtwarzany z istniejącego szkieletu' }
     ],
+    shapes: [],
     sections: [],
     measurements: [{ id: 'TM01', kind: 'distance', from: 'T0', to: 'T1', valueMm: 4200, source: 'manual', createdAt: now, sessionId: terraceSession }],
     sessions: [{ id: terraceSession, name: 'Szkielet tarasu', startedAt: now }],

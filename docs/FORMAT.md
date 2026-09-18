@@ -10,6 +10,7 @@ Project
     ├── MeasurementSession[]
     ├── Point3D[]
     ├── Wall[]
+    ├── Shape[]  (rectangle | circle — słupki, otwory itp., z heightMm jak ściana)
     ├── Section[]
     ├── Measurement[]
     └── HistoryEntry[]
@@ -23,6 +24,7 @@ Project
 - `state` rozdziela stan istniejący (`existing`), odtworzony (`reconstructed`) i projektowany (`proposed`).
 - `status` geometrii rozdziela element zmierzony (`measured`), wyliczony (`derived`) i niekompletny (`incomplete`).
 - identyfikatory (`P1`, `W03`, `AA1`) są stabilnymi odwołaniami; UI może je zmienić dopiero po świadomej operacji migracji/rename.
+- `Shape` (`kind: "rectangle" | "circle"`) opisuje elementy o własnym obrysie (słupki, otwory) — `center` + `heightMm`, dla prostokąta dodatkowo `widthMm`/`depthMm`/`rotationDeg`, dla koła `diameterMm`. Starsze pliki bez `shapes` są nadal poprawne — pole domyślnie uzupełnia się pustą tablicą.
 
 ## Minimalny przykład
 

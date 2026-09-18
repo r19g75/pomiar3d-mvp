@@ -13,7 +13,7 @@ function migrateLegacy(p: LegacyProject): Project {
   const area: Area = {
     id: newId('A'), name: p.name || 'Obszar po imporcie', kind: 'room', createdAt, updatedAt: p.updatedAt || createdAt,
     activePointId: p.activePointId, activeSessionId: sessionId,
-    points: p.points ?? [], walls: p.walls ?? [], sections: p.sections ?? [],
+    points: p.points ?? [], walls: p.walls ?? [], shapes: [], sections: p.sections ?? [],
     measurements: (p.measurements ?? []).map((m) => ({ ...m, sessionId: m.sessionId ?? sessionId })),
     sessions: [{ id: sessionId, name: 'Import starego projektu', startedAt: createdAt }],
     history: [{ id: newId('H'), createdAt: nowIso(), sessionId, action: 'imported', entityType: 'project', summary: 'Zaimportowano starszy płaski format Pomiar 3D' }]
@@ -31,7 +31,8 @@ export function validateProject(value: unknown): Project {
       if (!isObject(a) || typeof a.id !== 'string' || typeof a.name !== 'string') throw new Error('Nieprawidłowy obszar w projekcie')
       if (!Array.isArray(a.points) || !Array.isArray(a.walls) || !Array.isArray(a.sections) || !Array.isArray(a.measurements)) throw new Error(`Brak danych obszaru ${a.name}`)
     }
-    return value as unknown as Project
+    const areas = value.areas.map((a) => isObject(a) && Array.isArray(a.shapes) ? a : { ...(a as object), shapes: [] })
+    return { ...value, areas } as unknown as Project
   }
 
   if (Array.isArray(value.points) && Array.isArray(value.walls) && Array.isArray(value.sections) && Array.isArray(value.measurements)) {

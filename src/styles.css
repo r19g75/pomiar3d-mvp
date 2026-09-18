@@ -65,6 +65,14 @@ main { padding: 12px; }
 .point.selected { stroke: #facc15; stroke-width: 20; }
 .point-hit { fill: transparent; }
 .point-group { cursor: pointer; }
+.shape { stroke-width: 20; fill-opacity: .35; }
+.shape.measured { fill: #7c3aed; stroke: #6d28d9; }
+.shape.derived { fill: #94a3b8; stroke: #64748b; stroke-dasharray: 30 20; }
+.shape.missing { fill: #f87171; stroke: #dc2626; stroke-dasharray: 30 20; }
+.shape.state-reconstructed { opacity: .72; }
+.shape.state-proposed { opacity: .5; }
+.shape.selected { stroke: #facc15; stroke-width: 30; }
+.shape-group { cursor: pointer; }
 .svg-label { font-size: 105px; font-weight: 800; fill: #111827; paint-order: stroke; stroke: #fff; stroke-width: 18; }
 .svg-small { font-size: 78px; fill: #475569; }
 .svg-missing { font-size: 140px; font-weight: 900; fill: #dc2626; paint-order: stroke; stroke: #fff; stroke-width: 18; }

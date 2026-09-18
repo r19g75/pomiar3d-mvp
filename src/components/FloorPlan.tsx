@@ -1,13 +1,15 @@
 import type { Area } from '../domain/model'
-import { areaBounds, pointMap, wallLength } from '../domain/geometry'
+import { areaBounds, pointMap, rectCorners, wallLength } from '../domain/geometry'
 
-export function FloorPlan({ area, onSection, selectedWallId, onWallSelect, selectedPointId, onPointSelect }: {
+export function FloorPlan({ area, onSection, selectedWallId, onWallSelect, selectedPointId, onPointSelect, selectedShapeId, onShapeSelect }: {
   area: Area
   onSection: (id: string) => void
   selectedWallId?: string
   onWallSelect: (id: string) => void
   selectedPointId?: string
   onPointSelect: (id: string) => void
+  selectedShapeId?: string
+  onShapeSelect: (id: string) => void
 }) {
   const points = pointMap(area)
   const b = areaBounds(area)
@@ -41,6 +43,22 @@ export function FloorPlan({ area, onSection, selectedWallId, onWallSelect, selec
             <circle className="point-hit" cx={tx(p.position.x)} cy={ty(p.position.y)} r="380" />
             <circle className={`point ${p.source === 'measured' ? 'measured' : 'derived'} ${selected ? 'selected' : ''}`} cx={tx(p.position.x)} cy={ty(p.position.y)} r="34" />
             <text x={tx(p.position.x) + 55} y={ty(p.position.y) - 55} className="svg-label">{p.id}</text>
+          </g>
+        })}
+        {area.shapes.map((shape) => {
+          const selected = shape.id === selectedShapeId
+          const cls = shape.status === 'derived' ? 'derived' : shape.status === 'incomplete' ? 'missing' : 'measured'
+          const stateCls = shape.state ? `state-${shape.state}` : ''
+          const label = shape.kind === 'circle' ? `${shape.id} · ⌀${shape.diameterMm ?? 0}` : `${shape.id} · ${shape.widthMm ?? 0}×${shape.depthMm ?? 0}`
+          const cx = tx(shape.center.x); const cy = ty(shape.center.y)
+          return <g key={shape.id} className="shape-group" onClick={() => onShapeSelect(shape.id)}>
+            {shape.kind === 'circle' ? (
+              <circle className={`shape ${cls} ${stateCls} ${selected ? 'selected' : ''}`} cx={cx} cy={cy} r={(shape.diameterMm ?? 0) / 2} />
+            ) : (
+              <polygon className={`shape ${cls} ${stateCls} ${selected ? 'selected' : ''}`} points={rectCorners(shape).map((c) => `${tx(c.x)},${ty(c.y)}`).join(' ')} />
+            )}
+            <text x={cx} y={cy - 55} className="svg-label">{label}</text>
+            {shape.status === 'incomplete' && <text x={cx} y={cy + 120} className="svg-missing">?</text>}
           </g>
         })}
         {area.sections.map((section) => {

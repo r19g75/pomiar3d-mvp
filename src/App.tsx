@@ -3,6 +3,8 @@ import { FloorPlan } from './components/FloorPlan'
 import { SectionView } from './components/SectionView'
 import { WallPanel } from './components/WallPanel'
 import { PointPanel } from './components/PointPanel'
+import { ShapePanel } from './components/ShapePanel'
+import { AddElementPanel, type AddType } from './components/AddElementPanel'
 import { CommandBar } from './components/CommandBar'
 import { ProjectOverview } from './components/ProjectOverview'
 import { AreaHistory } from './components/AreaHistory'
@@ -27,7 +29,10 @@ export default function App() {
   const [sectionId, setSectionId] = useState('')
   const [selectedWallId, setSelectedWallId] = useState<string | undefined>()
   const [selectedPointId, setSelectedPointId] = useState<string | undefined>()
+  const [selectedShapeId, setSelectedShapeId] = useState<string | undefined>()
   const [wallEditMode, setWallEditMode] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
+  const [lastAddType, setLastAddType] = useState<AddType>('point')
   const [ready, setReady] = useState(false)
   const importRef = useRef<HTMLInputElement>(null)
 
@@ -49,23 +54,30 @@ export default function App() {
   const missingCount = area ? areaMissingCount(area) : 0
   const selectedWall = useMemo(() => area?.walls.find((w) => w.id === selectedWallId), [area, selectedWallId])
   const selectedPoint = useMemo(() => area?.points.find((p) => p.id === selectedPointId), [area, selectedPointId])
+  const selectedShape = useMemo(() => area?.shapes.find((s) => s.id === selectedShapeId), [area, selectedShapeId])
 
   const openArea = (selected: Area) => {
     setProject((p) => ({ ...p, activeAreaId: selected.id, updatedAt: nowIso() }))
     setSectionId(selected.sections[0]?.id ?? '')
     setSelectedWallId(undefined)
     setSelectedPointId(undefined)
+    setSelectedShapeId(undefined)
+    setAddOpen(false)
     setTab('plan')
     setScreen('area')
   }
 
   const selectWall = (id: string) => {
     if (!wallEditMode) return
-    setSelectedWallId(id); setSelectedPointId(undefined)
+    setSelectedWallId(id); setSelectedPointId(undefined); setSelectedShapeId(undefined)
   }
   const selectPoint = (id: string) => {
     if (!wallEditMode) return
-    setSelectedPointId(id); setSelectedWallId(undefined)
+    setSelectedPointId(id); setSelectedWallId(undefined); setSelectedShapeId(undefined)
+  }
+  const selectShape = (id: string) => {
+    if (!wallEditMode) return
+    setSelectedShapeId(id); setSelectedWallId(undefined); setSelectedPointId(undefined)
   }
 
   const updateArea = (updater: (area: Area) => Area) => {
@@ -165,6 +177,48 @@ export default function App() {
     })
   }
 
+  const saveShapeFields = (shapeId: string, patch: { x: number; y: number; z: number; widthMm?: number; depthMm?: number; rotationDeg?: number; diameterMm?: number; heightMm: number; state: ElementState }) => {
+    updateArea((a) => {
+      const shape = a.shapes.find((s) => s.id === shapeId)
+      if (!shape) return a
+      const changes: string[] = []
+      if (patch.x !== shape.center.x) changes.push(`x ${shape.center.x} → ${patch.x} mm`)
+      if (patch.y !== shape.center.y) changes.push(`y ${shape.center.y} → ${patch.y} mm`)
+      if (patch.z !== shape.center.z) changes.push(`z ${shape.center.z} → ${patch.z} mm`)
+      if (patch.heightMm !== shape.heightMm) changes.push(`wysokość ${shape.heightMm} → ${patch.heightMm} mm`)
+      if (shape.kind === 'circle' && patch.diameterMm !== shape.diameterMm) changes.push(`średnica ${shape.diameterMm} → ${patch.diameterMm} mm`)
+      if (shape.kind === 'rectangle' && patch.widthMm !== shape.widthMm) changes.push(`szerokość ${shape.widthMm} → ${patch.widthMm} mm`)
+      if (shape.kind === 'rectangle' && patch.depthMm !== shape.depthMm) changes.push(`głębokość ${shape.depthMm} → ${patch.depthMm} mm`)
+      if (shape.kind === 'rectangle' && patch.rotationDeg !== shape.rotationDeg) changes.push(`obrót ${shape.rotationDeg} → ${patch.rotationDeg}°`)
+      if (patch.state !== (shape.state ?? 'existing')) changes.push(`stan ${WALL_STATE_LABEL[shape.state ?? 'existing']} → ${WALL_STATE_LABEL[patch.state]}`)
+      if (!changes.length) return a
+      const shapes = a.shapes.map((s) => s.id !== shapeId ? s : ({
+        ...s, center: { x: patch.x, y: patch.y, z: patch.z }, heightMm: patch.heightMm, state: patch.state,
+        widthMm: patch.widthMm, depthMm: patch.depthMm, rotationDeg: patch.rotationDeg, diameterMm: patch.diameterMm
+      }))
+      return addHistory({ ...a, shapes }, { action: 'updated', entityType: 'shape', entityId: shapeId, summary: `${shapeId}: ${changes.join(', ')}` })
+    })
+  }
+
+  const createPoint = (id: string, x: number, y: number, z: number) => {
+    updateArea((a) => addHistory({
+      ...a, activePointId: id,
+      points: [...a.points, { id, position: { x, y, z }, source: 'measured', state: 'existing' }]
+    }, { action: 'created', entityType: 'point', entityId: id, summary: `Dodano ${id} = (${x}, ${y}, ${z}) mm` }))
+  }
+
+  const createWall = (id: string, from: string, to: string, heightMm: number, thicknessMm: number) => {
+    updateArea((a) => addHistory({
+      ...a, walls: [...a.walls, { id, from, to, heightMm, thicknessMm, status: 'measured', state: 'existing' }]
+    }, { action: 'created', entityType: 'wall', entityId: id, summary: `Dodano ścianę ${id}: ${from}–${to}, H=${heightMm} mm` }))
+  }
+
+  const createShape = (id: string, kind: 'rectangle' | 'circle', x: number, y: number, z: number, dims: { widthMm?: number; depthMm?: number; rotationDeg?: number; diameterMm?: number }, heightMm: number) => {
+    updateArea((a) => addHistory({
+      ...a, shapes: [...a.shapes, { id, kind, center: { x, y, z }, ...dims, heightMm, status: 'measured', state: 'existing' }]
+    }, { action: 'created', entityType: 'shape', entityId: id, summary: `Dodano ${kind === 'circle' ? 'koło' : 'prostokąt'} ${id}` }))
+  }
+
   const fillMissing = (pointId: string, value: number) => {
     if (!section) return
     updateArea((a) => addHistory({
@@ -221,11 +275,14 @@ export default function App() {
                 onWallSelect={selectWall}
                 selectedPointId={selectedPointId}
                 onPointSelect={selectPoint}
+                selectedShapeId={selectedShapeId}
+                onShapeSelect={selectShape}
               />
               <button className={wallEditMode ? 'secondary wall-mode-toggle active' : 'secondary wall-mode-toggle'} onClick={() => {
                 setWallEditMode((v) => !v)
                 setSelectedWallId(undefined)
                 setSelectedPointId(undefined)
+                setSelectedShapeId(undefined)
               }}>
                 {wallEditMode ? 'Tryb: Modyfikacja (tap = edytuj)' : 'Tryb: Podgląd (tap wyłączony)'}
               </button>
@@ -249,7 +306,28 @@ export default function App() {
                   onSave={(patch) => savePointFields(selectedPoint.id, patch)}
                 />
               )}
-              <button className="primary wide" onClick={addMeasurement}>+ Szybki pomiar</button>
+              {selectedShape && (
+                <ShapePanel
+                  key={selectedShape.id}
+                  shape={selectedShape}
+                  startInEdit={wallEditMode}
+                  onClose={() => setSelectedShapeId(undefined)}
+                  onSave={(patch) => saveShapeFields(selectedShape.id, patch)}
+                />
+              )}
+              {addOpen ? (
+                <AddElementPanel
+                  area={area}
+                  lastType={lastAddType}
+                  onTypeChange={setLastAddType}
+                  onCreatePoint={createPoint}
+                  onCreateWall={createWall}
+                  onCreateShape={createShape}
+                  onClose={() => setAddOpen(false)}
+                />
+              ) : (
+                <button className="primary wide" onClick={() => setAddOpen(true)}>+ Dodaj element</button>
+              )}
             </>}
 
             {tab === 'sections' && (area.sections.length ? <>
