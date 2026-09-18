@@ -134,7 +134,22 @@ export default function App() {
     })
   }
 
-  const remeasureWall = (wallId: string, newLengthMm: number) => {
+  const addControlMeasurement = (wallId: string, valueMm: number) => {
+    updateArea((a) => {
+      const wall = a.walls.find((w) => w.id === wallId)
+      if (!wall) return a
+      const measurementId = newId('M')
+      const measurement = {
+        id: measurementId, kind: 'distance' as const, from: wall.from, to: wall.to, valueMm,
+        source: 'quick_measure' as const, createdAt: nowIso(), sessionId: a.activeSessionId
+      }
+      return addHistory({ ...a, measurements: [...a.measurements, measurement] }, {
+        action: 'measured', entityType: 'measurement', entityId: measurementId, summary: `Pomiar kontrolny ${wall.from}–${wall.to} = ${valueMm} mm`
+      })
+    })
+  }
+
+  const applyMeasurementToWall = (wallId: string, valueMm: number) => {
     updateArea((a) => {
       const wall = a.walls.find((w) => w.id === wallId)
       if (!wall) return a
@@ -142,20 +157,12 @@ export default function App() {
       const from = points.get(wall.from); const to = points.get(wall.to)
       if (!from || !to) return a
       const oldLength = Math.round(wallLength(wall, points))
-      if (Math.round(newLengthMm) === oldLength) return a
-      const newPos = movePointForLength(from, to, newLengthMm)
-      const measurementId = newId('M')
-      let updated: Area = {
-        ...a,
-        points: a.points.map((p) => p.id === to.id ? { ...p, position: newPos } : p),
-        measurements: [...a.measurements, {
-          id: measurementId, kind: 'distance', from: wall.from, to: wall.to, valueMm: newLengthMm,
-          source: 'quick_measure', createdAt: nowIso(), sessionId: a.activeSessionId
-        }]
-      }
-      updated = addHistory(updated, { action: 'measured', entityType: 'measurement', entityId: measurementId, summary: `${wall.from}–${wall.to} = ${newLengthMm} mm` })
-      updated = addHistory(updated, { action: 'updated', entityType: 'wall', entityId: wallId, summary: `${wallId} długość ${oldLength} → ${Math.round(newLengthMm)} mm` })
-      return updated
+      if (Math.round(valueMm) === oldLength) return a
+      const newPos = movePointForLength(from, to, valueMm)
+      return addHistory({ ...a, points: a.points.map((p) => p.id === to.id ? { ...p, position: newPos } : p) }, {
+        action: 'updated', entityType: 'wall', entityId: wallId,
+        summary: `${wallId} długość ${oldLength} → ${Math.round(valueMm)} mm (zastosowano pomiar kontrolny)`
+      })
     })
   }
 
@@ -291,7 +298,8 @@ export default function App() {
                   startInEdit={wallEditMode}
                   onClose={() => setSelectedWallId(undefined)}
                   onSave={(patch) => saveWallFields(selectedWall.id, patch)}
-                  onRemeasure={(len) => remeasureWall(selectedWall.id, len)}
+                  onControlMeasure={(v) => addControlMeasurement(selectedWall.id, v)}
+                  onApplyMeasurement={(v) => applyMeasurementToWall(selectedWall.id, v)}
                 />
               )}
               {selectedPoint && (
