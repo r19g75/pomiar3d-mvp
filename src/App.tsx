@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FloorPlan } from './components/FloorPlan'
 import { SectionView } from './components/SectionView'
+import { WallPanel } from './components/WallPanel'
 import { CommandBar } from './components/CommandBar'
 import { ProjectOverview } from './components/ProjectOverview'
 import { AreaHistory } from './components/AreaHistory'
@@ -8,10 +9,12 @@ import { SessionPanel } from './components/SessionPanel'
 import { executeCommand } from './commands/parser'
 import { downloadProject, readProjectFile } from './io/projectFile'
 import { loadProject, saveProject } from './storage/db'
-import { areaMissingCount } from './domain/geometry'
+import { areaMissingCount, movePointForLength, pointMap, wallLength } from './domain/geometry'
 import { addHistory, withArea } from './domain/operations'
-import { makeDemoProject, makeEmptyArea, newId, nowIso, type Area, type AreaKind, type Project } from './domain/model'
+import { makeDemoProject, makeEmptyArea, newId, nowIso, type Area, type AreaKind, type ElementState, type Project } from './domain/model'
 import './styles.css'
+
+const WALL_STATE_LABEL: Record<ElementState, string> = { existing: 'istniejąca', reconstructed: 'odtworzona', proposed: 'projektowana' }
 
 type Tab = 'plan' | 'sections' | 'measurements' | 'sessions' | 'history' | 'data'
 type Screen = 'overview' | 'area'
@@ -21,6 +24,8 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>('overview')
   const [tab, setTab] = useState<Tab>('plan')
   const [sectionId, setSectionId] = useState('')
+  const [selectedWallId, setSelectedWallId] = useState<string | undefined>()
+  const [wallEditMode, setWallEditMode] = useState(false)
   const [ready, setReady] = useState(false)
   const importRef = useRef<HTMLInputElement>(null)
 
@@ -40,10 +45,12 @@ export default function App() {
   const area = useMemo(() => project.areas.find((a) => a.id === project.activeAreaId) ?? project.areas[0], [project])
   const section = useMemo(() => area?.sections.find((s) => s.id === sectionId) ?? area?.sections[0], [area, sectionId])
   const missingCount = area ? areaMissingCount(area) : 0
+  const selectedWall = useMemo(() => area?.walls.find((w) => w.id === selectedWallId), [area, selectedWallId])
 
   const openArea = (selected: Area) => {
     setProject((p) => ({ ...p, activeAreaId: selected.id, updatedAt: nowIso() }))
     setSectionId(selected.sections[0]?.id ?? '')
+    setSelectedWallId(undefined)
     setTab('plan')
     setScreen('area')
   }
@@ -90,6 +97,45 @@ export default function App() {
   }
 
   const selectSession = (id: string) => updateArea((a) => ({ ...a, activeSessionId: id }))
+
+  const saveWallFields = (wallId: string, patch: { heightMm: number; thicknessMm: number; state: ElementState }) => {
+    updateArea((a) => {
+      const wall = a.walls.find((w) => w.id === wallId)
+      if (!wall) return a
+      const changes: string[] = []
+      if (patch.heightMm !== wall.heightMm) changes.push(`wysokość ${wall.heightMm} → ${patch.heightMm} mm`)
+      if (patch.thicknessMm !== wall.thicknessMm) changes.push(`grubość ${wall.thicknessMm} → ${patch.thicknessMm} mm`)
+      if (patch.state !== (wall.state ?? 'existing')) changes.push(`stan ${WALL_STATE_LABEL[wall.state ?? 'existing']} → ${WALL_STATE_LABEL[patch.state]}`)
+      if (!changes.length) return a
+      const walls = a.walls.map((w) => w.id === wallId ? { ...w, ...patch } : w)
+      return addHistory({ ...a, walls }, { action: 'updated', entityType: 'wall', entityId: wallId, summary: `${wallId}: ${changes.join(', ')}` })
+    })
+  }
+
+  const remeasureWall = (wallId: string, newLengthMm: number) => {
+    updateArea((a) => {
+      const wall = a.walls.find((w) => w.id === wallId)
+      if (!wall) return a
+      const points = pointMap(a)
+      const from = points.get(wall.from); const to = points.get(wall.to)
+      if (!from || !to) return a
+      const oldLength = Math.round(wallLength(wall, points))
+      if (Math.round(newLengthMm) === oldLength) return a
+      const newPos = movePointForLength(from, to, newLengthMm)
+      const measurementId = newId('M')
+      let updated: Area = {
+        ...a,
+        points: a.points.map((p) => p.id === to.id ? { ...p, position: newPos } : p),
+        measurements: [...a.measurements, {
+          id: measurementId, kind: 'distance', from: wall.from, to: wall.to, valueMm: newLengthMm,
+          source: 'quick_measure', createdAt: nowIso(), sessionId: a.activeSessionId
+        }]
+      }
+      updated = addHistory(updated, { action: 'measured', entityType: 'measurement', entityId: measurementId, summary: `${wall.from}–${wall.to} = ${newLengthMm} mm` })
+      updated = addHistory(updated, { action: 'updated', entityType: 'wall', entityId: wallId, summary: `${wallId} długość ${oldLength} → ${Math.round(newLengthMm)} mm` })
+      return updated
+    })
+  }
 
   const fillMissing = (pointId: string, value: number) => {
     if (!section) return
@@ -140,7 +186,26 @@ export default function App() {
             <div className="area-context"><span>Aktywna sesja:</span><strong>{area.sessions.find((s) => s.id === area.activeSessionId)?.name ?? 'brak'}</strong><span>·</span><span>{area.measurements.length} pomiarów</span></div>
 
             {tab === 'plan' && <>
-              <FloorPlan area={area} onSection={(id) => { setSectionId(id); setTab('sections') }} />
+              <FloorPlan
+                area={area}
+                onSection={(id) => { setSectionId(id); setTab('sections') }}
+                selectedWallId={selectedWallId}
+                onWallSelect={(id) => setSelectedWallId(id)}
+              />
+              <button className={wallEditMode ? 'secondary wall-mode-toggle active' : 'secondary wall-mode-toggle'} onClick={() => setWallEditMode((v) => !v)}>
+                {wallEditMode ? 'Tryb: Modyfikacja (tap = edytuj)' : 'Tryb: Podgląd (tap = info)'}
+              </button>
+              {selectedWall && (
+                <WallPanel
+                  key={selectedWall.id}
+                  area={area}
+                  wall={selectedWall}
+                  startInEdit={wallEditMode}
+                  onClose={() => setSelectedWallId(undefined)}
+                  onSave={(patch) => saveWallFields(selectedWall.id, patch)}
+                  onRemeasure={(len) => remeasureWall(selectedWall.id, len)}
+                />
+              )}
               <button className="primary wide" onClick={addMeasurement}>+ Szybki pomiar</button>
             </>}
 

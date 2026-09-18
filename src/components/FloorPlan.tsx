@@ -1,7 +1,12 @@
 import type { Area } from '../domain/model'
 import { areaBounds, pointMap, wallLength } from '../domain/geometry'
 
-export function FloorPlan({ area, onSection }: { area: Area; onSection: (id: string) => void }) {
+export function FloorPlan({ area, onSection, selectedWallId, onWallSelect }: {
+  area: Area
+  onSection: (id: string) => void
+  selectedWallId?: string
+  onWallSelect: (id: string) => void
+}) {
   const points = pointMap(area)
   const b = areaBounds(area)
   const pad = 450
@@ -20,8 +25,10 @@ export function FloorPlan({ area, onSection }: { area: Area; onSection: (id: str
           const cls = wall.status === 'derived' ? 'derived' : wall.status === 'incomplete' ? 'missing' : 'measured'
           const stateCls = wall.state ? `state-${wall.state}` : ''
           const mx = (tx(a.position.x) + tx(c.position.x)) / 2; const my = (ty(a.position.y) + ty(c.position.y)) / 2
-          return <g key={wall.id}>
-            <line className={`wall ${cls} ${stateCls}`} x1={tx(a.position.x)} y1={ty(a.position.y)} x2={tx(c.position.x)} y2={ty(c.position.y)} />
+          const selected = wall.id === selectedWallId
+          return <g key={wall.id} className="wall-group" onClick={() => onWallSelect(wall.id)}>
+            <line className="wall-hit" x1={tx(a.position.x)} y1={ty(a.position.y)} x2={tx(c.position.x)} y2={ty(c.position.y)} />
+            <line className={`wall ${cls} ${stateCls} ${selected ? 'selected' : ''}`} x1={tx(a.position.x)} y1={ty(a.position.y)} x2={tx(c.position.x)} y2={ty(c.position.y)} />
             <text x={mx} y={my - 55} className="svg-label">{wall.id} · {Math.round(wallLength(wall, points))}</text>
             {wall.status === 'incomplete' && <text x={mx} y={my + 120} className="svg-missing">?</text>}
           </g>

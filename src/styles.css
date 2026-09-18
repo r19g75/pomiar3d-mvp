@@ -55,6 +55,9 @@ main { padding: 12px; }
 .wall.missing { stroke: #dc2626; stroke-dasharray: 35 30; }
 .wall.state-reconstructed { opacity: .72; }
 .wall.state-proposed { opacity: .5; }
+.wall.selected { stroke: #facc15; }
+.wall-hit { stroke: transparent; stroke-width: 160; }
+.wall-group { cursor: pointer; }
 .point { stroke-width: 12; }
 .point.measured { fill: #fff; stroke: #2563eb; }
 .point.derived { fill: #fff; stroke: #64748b; stroke-dasharray: 12 10; }
@@ -65,6 +68,14 @@ main { padding: 12px; }
 .section-label { font-size: 105px; font-weight: 900; fill: #7c3aed; paint-order: stroke; stroke: #fff; stroke-width: 18; }
 .section-line { stroke: #7c3aed; stroke-width: 22; stroke-dasharray: 80 38; }
 .section-hit { cursor: pointer; }
+.wall-mode-toggle { width: 100%; margin-top: 8px; }
+.wall-mode-toggle.active { background: #1d4ed8; color: white; }
+.wall-panel { margin-top: 10px; }
+.wall-info-row { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid #1f2937; font-size: 13px; }
+.wall-info-row:last-of-type { border-bottom: none; }
+.wall-edit { display: grid; gap: 10px; }
+.wall-edit label { display: grid; gap: 4px; font-size: 12px; color: #94a3b8; }
+.wall-edit input, .wall-edit select { background: #0f1626; border: 1px solid #374151; color: #e5e7eb; padding: 10px; border-radius: 8px; font-size: 15px; }
 .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; padding: 10px 14px; border-top: 1px solid #1f2937; color: #94a3b8; }
 .section-tabs { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 10px; }
 .section-tabs button { white-space: nowrap; }

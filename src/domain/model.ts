@@ -50,7 +50,7 @@ export type Measurement = {
   sectionId?: Id
   sectionPointId?: Id
   valueMm?: number
-  source: 'manual' | 'voice' | 'bluetooth'
+  source: 'manual' | 'voice' | 'bluetooth' | 'quick_measure'
   createdAt: string
   sessionId?: Id
   note?: string

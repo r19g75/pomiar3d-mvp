@@ -78,15 +78,18 @@ export function executeCommand(project: Project, input: string): CommandResult {
     if (head.endsWith('x')) pos.x += head.startsWith('-') ? -distance : distance
     else pos.y += head.startsWith('-') ? -distance : distance
     const wallId = `W${String(area.walls.length + 1).padStart(2, '0')}`
+    const measurementId = newId('M')
     const project2 = updateActive(project, (a) => {
       let updated: Area = {
         ...a,
         activePointId: pointId,
         points: [...a.points, { id: pointId, position: pos, source: 'measured', state: 'existing' }],
-        walls: [...a.walls, { id: wallId, from: start.id, to: pointId, heightMm: 0, thicknessMm: 0, status: 'incomplete', state: 'existing', note: 'utworzone komendą względną; uzupełnij wysokość/grubość' }]
+        walls: [...a.walls, { id: wallId, from: start.id, to: pointId, heightMm: 0, thicknessMm: 0, status: 'incomplete', state: 'existing', note: 'utworzone komendą względną; uzupełnij wysokość/grubość' }],
+        measurements: [...a.measurements, { id: measurementId, kind: 'distance', from: start.id, to: pointId, valueMm: distance, source: 'quick_measure', createdAt: nowIso(), sessionId: a.activeSessionId }]
       }
       updated = addHistory(updated, { action: 'created', entityType: 'point', entityId: pointId, summary: `${head} ${distance}: utworzono ${pointId}` })
-      return addHistory(updated, { action: 'created', entityType: 'wall', entityId: wallId, summary: `Utworzono niekompletną ścianę ${wallId}: ${start.id}–${pointId}` })
+      updated = addHistory(updated, { action: 'created', entityType: 'wall', entityId: wallId, summary: `Utworzono niekompletną ścianę ${wallId}: ${start.id}–${pointId}` })
+      return addHistory(updated, { action: 'measured', entityType: 'measurement', entityId: measurementId, summary: `${start.id}–${pointId} = ${distance} mm` })
     })
     return { project: project2, message: `${pointId} ${head} ${distance} mm; utworzono ${wallId}` }
   }

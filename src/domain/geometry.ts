@@ -1,4 +1,4 @@
-import type { Area, Point3D, Wall } from './model'
+import type { Area, Point3D, Vec3, Wall } from './model'
 
 export function pointMap(area: Area) {
   return new Map(area.points.map((p) => [p.id, p]))
@@ -9,6 +9,15 @@ export function wallLength(wall: Wall, points: Map<string, Point3D>) {
   const b = points.get(wall.to)
   if (!a || !b) return 0
   return Math.hypot(b.position.x - a.position.x, b.position.y - a.position.y)
+}
+
+export function movePointForLength(from: Point3D, to: Point3D, newLengthMm: number): Vec3 {
+  const dx = to.position.x - from.position.x
+  const dy = to.position.y - from.position.y
+  const dist = Math.hypot(dx, dy)
+  if (dist === 0) return { ...to.position }
+  const scale = newLengthMm / dist
+  return { x: from.position.x + dx * scale, y: from.position.y + dy * scale, z: to.position.z }
 }
 
 export function areaBounds(area: Area) {
