@@ -46,21 +46,40 @@ def add_wall(wall, points, collection):
     dx, dy = bx - ax, by - ay
     length = math.hypot(dx, dy)
     height = max(float(wall.get("heightMm", 0)) * MM_TO_M, 0.01)
-    thickness = max(float(wall.get("thicknessMm", 0)) * MM_TO_M, 0.01)
+    thickness_mm = float(wall.get("thicknessMm", 0))
+    # P0->P1 to lico pomiarowe sciany, grubosc odklada sie na jedna strone
+    # (thicknessSide: 1 albo -1, domyslnie 1), a nie symetrycznie wokol linii.
+    side = wall.get("thicknessSide", 1)
 
-    bpy.ops.mesh.primitive_cube_add(size=1, location=((ax + bx) / 2, (ay + by) / 2, min(az, bz) + height / 2))
-    obj = bpy.context.active_object
+    if thickness_mm <= 0:
+        # Nieznana/nieodlozona grubosc - nie udawaj sztucznej bryly (np. 10 mm),
+        # zaimportuj referencyjna linie (edge) na wysokosci lica sciany.
+        mesh = bpy.data.meshes.new(wall.get("id", "Wall") + "_ref")
+        mesh.from_pydata([(ax, ay, az), (bx, by, az + height)], [(0, 1)], [])
+        mesh.update()
+        obj = bpy.data.objects.new(wall.get("id", "Wall"), mesh)
+        collection.objects.link(obj)
+        obj["pomiar3d_thickness_unknown"] = True
+    else:
+        thickness = thickness_mm * MM_TO_M
+        nx, ny = (-dy / length, dx / length) if length > 0 else (0.0, 0.0)
+        cx = (ax + bx) / 2 + nx * side * thickness / 2
+        cy = (ay + by) / 2 + ny * side * thickness / 2
+        bpy.ops.mesh.primitive_cube_add(size=1, location=(cx, cy, min(az, bz) + height / 2))
+        obj = bpy.context.active_object
+        obj.dimensions = (length, thickness, height)
+        obj.rotation_euler[2] = math.atan2(dy, dx)
+        move_object_to_collection(obj, collection)
+
     obj.name = wall.get("id", "Wall")
-    obj.dimensions = (length, thickness, height)
-    obj.rotation_euler[2] = math.atan2(dy, dx)
     obj["pomiar3d_type"] = "wall"
     obj["pomiar3d_status"] = wall.get("status", "")
     obj["pomiar3d_state"] = wall.get("state", "existing")
     obj["pomiar3d_from"] = wall.get("from", "")
     obj["pomiar3d_to"] = wall.get("to", "")
+    obj["pomiar3d_thickness_side"] = side
     if wall.get("note"):
         obj["pomiar3d_note"] = wall["note"]
-    move_object_to_collection(obj, collection)
 
 
 def add_reference_point(point, collection):
