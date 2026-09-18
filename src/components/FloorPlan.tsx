@@ -1,11 +1,13 @@
 import type { Area } from '../domain/model'
 import { areaBounds, pointMap, wallLength } from '../domain/geometry'
 
-export function FloorPlan({ area, onSection, selectedWallId, onWallSelect }: {
+export function FloorPlan({ area, onSection, selectedWallId, onWallSelect, selectedPointId, onPointSelect }: {
   area: Area
   onSection: (id: string) => void
   selectedWallId?: string
   onWallSelect: (id: string) => void
+  selectedPointId?: string
+  onPointSelect: (id: string) => void
 }) {
   const points = pointMap(area)
   const b = areaBounds(area)
@@ -33,10 +35,14 @@ export function FloorPlan({ area, onSection, selectedWallId, onWallSelect }: {
             {wall.status === 'incomplete' && <text x={mx} y={my + 120} className="svg-missing">?</text>}
           </g>
         })}
-        {area.points.map((p) => <g key={p.id}>
-          <circle className={p.source === 'measured' ? 'point measured' : 'point derived'} cx={tx(p.position.x)} cy={ty(p.position.y)} r="34" />
-          <text x={tx(p.position.x) + 55} y={ty(p.position.y) - 55} className="svg-label">{p.id}</text>
-        </g>)}
+        {area.points.map((p) => {
+          const selected = p.id === selectedPointId
+          return <g key={p.id} className="point-group" onClick={() => onPointSelect(p.id)}>
+            <circle className="point-hit" cx={tx(p.position.x)} cy={ty(p.position.y)} r="380" />
+            <circle className={`point ${p.source === 'measured' ? 'measured' : 'derived'} ${selected ? 'selected' : ''}`} cx={tx(p.position.x)} cy={ty(p.position.y)} r="34" />
+            <text x={tx(p.position.x) + 55} y={ty(p.position.y) - 55} className="svg-label">{p.id}</text>
+          </g>
+        })}
         {area.sections.map((section) => {
           const isY = section.axis === 'y'; const pos = section.stationMm
           const x1 = isY ? tx(b.minX - 200) : tx(pos); const y1 = isY ? ty(pos) : ty(b.minY - 200)

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { FloorPlan } from './components/FloorPlan'
 import { SectionView } from './components/SectionView'
 import { WallPanel } from './components/WallPanel'
+import { PointPanel } from './components/PointPanel'
 import { CommandBar } from './components/CommandBar'
 import { ProjectOverview } from './components/ProjectOverview'
 import { AreaHistory } from './components/AreaHistory'
@@ -25,6 +26,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('plan')
   const [sectionId, setSectionId] = useState('')
   const [selectedWallId, setSelectedWallId] = useState<string | undefined>()
+  const [selectedPointId, setSelectedPointId] = useState<string | undefined>()
   const [wallEditMode, setWallEditMode] = useState(false)
   const [ready, setReady] = useState(false)
   const importRef = useRef<HTMLInputElement>(null)
@@ -46,14 +48,19 @@ export default function App() {
   const section = useMemo(() => area?.sections.find((s) => s.id === sectionId) ?? area?.sections[0], [area, sectionId])
   const missingCount = area ? areaMissingCount(area) : 0
   const selectedWall = useMemo(() => area?.walls.find((w) => w.id === selectedWallId), [area, selectedWallId])
+  const selectedPoint = useMemo(() => area?.points.find((p) => p.id === selectedPointId), [area, selectedPointId])
 
   const openArea = (selected: Area) => {
     setProject((p) => ({ ...p, activeAreaId: selected.id, updatedAt: nowIso() }))
     setSectionId(selected.sections[0]?.id ?? '')
     setSelectedWallId(undefined)
+    setSelectedPointId(undefined)
     setTab('plan')
     setScreen('area')
   }
+
+  const selectWall = (id: string) => { setSelectedWallId(id); setSelectedPointId(undefined) }
+  const selectPoint = (id: string) => { setSelectedPointId(id); setSelectedWallId(undefined) }
 
   const updateArea = (updater: (area: Area) => Area) => {
     if (!area) return
@@ -137,6 +144,21 @@ export default function App() {
     })
   }
 
+  const savePointFields = (pointId: string, patch: { x: number; y: number; z: number; state: ElementState }) => {
+    updateArea((a) => {
+      const point = a.points.find((p) => p.id === pointId)
+      if (!point) return a
+      const changes: string[] = []
+      if (patch.x !== point.position.x) changes.push(`x ${point.position.x} → ${patch.x} mm`)
+      if (patch.y !== point.position.y) changes.push(`y ${point.position.y} → ${patch.y} mm`)
+      if (patch.z !== point.position.z) changes.push(`z ${point.position.z} → ${patch.z} mm`)
+      if (patch.state !== (point.state ?? 'existing')) changes.push(`stan ${WALL_STATE_LABEL[point.state ?? 'existing']} → ${WALL_STATE_LABEL[patch.state]}`)
+      if (!changes.length) return a
+      const points = a.points.map((p) => p.id === pointId ? { ...p, position: { x: patch.x, y: patch.y, z: patch.z }, state: patch.state } : p)
+      return addHistory({ ...a, points }, { action: 'updated', entityType: 'point', entityId: pointId, summary: `${pointId}: ${changes.join(', ')}` })
+    })
+  }
+
   const fillMissing = (pointId: string, value: number) => {
     if (!section) return
     updateArea((a) => addHistory({
@@ -190,7 +212,9 @@ export default function App() {
                 area={area}
                 onSection={(id) => { setSectionId(id); setTab('sections') }}
                 selectedWallId={selectedWallId}
-                onWallSelect={(id) => setSelectedWallId(id)}
+                onWallSelect={selectWall}
+                selectedPointId={selectedPointId}
+                onPointSelect={selectPoint}
               />
               <button className={wallEditMode ? 'secondary wall-mode-toggle active' : 'secondary wall-mode-toggle'} onClick={() => setWallEditMode((v) => !v)}>
                 {wallEditMode ? 'Tryb: Modyfikacja (tap = edytuj)' : 'Tryb: Podgląd (tap = info)'}
@@ -204,6 +228,15 @@ export default function App() {
                   onClose={() => setSelectedWallId(undefined)}
                   onSave={(patch) => saveWallFields(selectedWall.id, patch)}
                   onRemeasure={(len) => remeasureWall(selectedWall.id, len)}
+                />
+              )}
+              {selectedPoint && (
+                <PointPanel
+                  key={selectedPoint.id}
+                  point={selectedPoint}
+                  startInEdit={wallEditMode}
+                  onClose={() => setSelectedPointId(undefined)}
+                  onSave={(patch) => savePointFields(selectedPoint.id, patch)}
                 />
               )}
               <button className="primary wide" onClick={addMeasurement}>+ Szybki pomiar</button>
