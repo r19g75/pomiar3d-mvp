@@ -43,6 +43,33 @@ export type Shape = {
   note?: string
 }
 
+export type SurveyStation = {
+  id: Id
+  label?: string
+  position: Vec3
+  source: 'manual' | 'derived'
+}
+
+export type StationObservation = {
+  id: Id
+  stationId: Id
+  targetPointId: Id
+  distanceMm: number
+  source: 'manual' | 'voice' | 'bluetooth'
+  createdAt: string
+  sessionId?: Id
+}
+
+export type StationSurvey = {
+  id: Id
+  name: string
+  plane: 'xy' | 'xz' | 'yz'
+  stationIds: Id[]
+  targetOrder: Id[]
+  observations: StationObservation[]
+  closedOutline?: boolean
+}
+
 export type SectionPoint = {
   id: Id
   offsetMm: number
@@ -109,6 +136,8 @@ export type Area = {
   measurements: Measurement[]
   sessions: MeasurementSession[]
   history: HistoryEntry[]
+  stations?: SurveyStation[]
+  stationSurveys?: StationSurvey[]
 }
 
 export type Project = {
