@@ -56,7 +56,7 @@ main { padding: 12px; }
 .wall.state-reconstructed { opacity: .72; }
 .wall.state-proposed { opacity: .5; }
 .wall.selected { stroke: #facc15; }
-.wall-hit { stroke: transparent; stroke-width: 160; }
+.wall-hit { stroke: transparent; stroke-width: 650; }
 .wall-group { cursor: pointer; }
 .point { stroke-width: 12; }
 .point.measured { fill: #fff; stroke: #2563eb; }
