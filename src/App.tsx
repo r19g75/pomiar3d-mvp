@@ -68,15 +68,12 @@ export default function App() {
   }
 
   const selectWall = (id: string) => {
-    if (!wallEditMode) return
     setSelectedWallId(id); setSelectedPointId(undefined); setSelectedShapeId(undefined)
   }
   const selectPoint = (id: string) => {
-    if (!wallEditMode) return
     setSelectedPointId(id); setSelectedWallId(undefined); setSelectedShapeId(undefined)
   }
   const selectShape = (id: string) => {
-    if (!wallEditMode) return
     setSelectedShapeId(id); setSelectedWallId(undefined); setSelectedPointId(undefined)
   }
 
@@ -284,7 +281,7 @@ export default function App() {
                 setSelectedPointId(undefined)
                 setSelectedShapeId(undefined)
               }}>
-                {wallEditMode ? 'Tryb: Modyfikacja (tap = edytuj)' : 'Tryb: Podgląd (tap wyłączony)'}
+                {wallEditMode ? 'Tryb: Modyfikacja (tap = edytuj)' : 'Tryb: Podgląd (tap = info)'}
               </button>
               {selectedWall && (
                 <WallPanel
