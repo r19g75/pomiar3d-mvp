@@ -1,9 +1,18 @@
+import { execSync } from 'node:child_process'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+function buildId() {
+  const sha = process.env.GITHUB_SHA?.slice(0, 7)
+  if (sha) return sha
+  try { return execSync('git rev-parse --short HEAD').toString().trim() }
+  catch { return new Date().toISOString().replace(/[-:T]/g, '').slice(0, 12) }
+}
+
 export default defineConfig({
   base: './',
+  define: { __APP_BUILD__: JSON.stringify(buildId()) },
   plugins: [
     react(),
     VitePWA({

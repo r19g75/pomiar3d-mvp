@@ -150,7 +150,7 @@ export default function App() {
       <header>
         <div className="header-title">
           {screen === 'area' && <button className="back" onClick={() => setScreen('overview')} aria-label="Wróć do obszarów">‹</button>}
-          <div><div className="eyebrow">POMIAR 3D · OFFLINE FIRST</div><h1>{screen === 'area' && area ? area.name : project.name}</h1></div>
+          <div><div className="eyebrow">POMIAR 3D · OFFLINE FIRST · {__APP_BUILD__}</div><h1>{screen === 'area' && area ? area.name : project.name}</h1></div>
         </div>
         <div className="header-actions">
           {screen === 'area' && <span className={missingCount ? 'badge warn' : 'badge ok'}>{missingCount ? `${missingCount} braków` : 'bez braków'}</span>}

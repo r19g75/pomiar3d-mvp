@@ -207,7 +207,7 @@ export function makeDemoProject(): Project {
   }
 
   return {
-    format: 'pomiar3d', version: 1, id: 'projekt_demo', name: 'Dom — demo', units: 'mm',
+    format: 'pomiar3d', version: 1, id: 'projekt_demo', name: 'Projekt demonstracyjny', units: 'mm',
     createdAt: now, updatedAt: now, activeAreaId: room.id, areas: [room, terrace]
   }
 }
