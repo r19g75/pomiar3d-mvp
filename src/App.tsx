@@ -59,8 +59,14 @@ export default function App() {
     setScreen('area')
   }
 
-  const selectWall = (id: string) => { setSelectedWallId(id); setSelectedPointId(undefined) }
-  const selectPoint = (id: string) => { setSelectedPointId(id); setSelectedWallId(undefined) }
+  const selectWall = (id: string) => {
+    if (!wallEditMode) return
+    setSelectedWallId(id); setSelectedPointId(undefined)
+  }
+  const selectPoint = (id: string) => {
+    if (!wallEditMode) return
+    setSelectedPointId(id); setSelectedWallId(undefined)
+  }
 
   const updateArea = (updater: (area: Area) => Area) => {
     if (!area) return
@@ -221,7 +227,7 @@ export default function App() {
                 setSelectedWallId(undefined)
                 setSelectedPointId(undefined)
               }}>
-                {wallEditMode ? 'Tryb: Modyfikacja (tap = edytuj)' : 'Tryb: Podgląd (tap = info)'}
+                {wallEditMode ? 'Tryb: Modyfikacja (tap = edytuj)' : 'Tryb: Podgląd (tap wyłączony)'}
               </button>
               {selectedWall && (
                 <WallPanel
