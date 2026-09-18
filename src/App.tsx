@@ -5,6 +5,7 @@ import { WallPanel } from './components/WallPanel'
 import { PointPanel } from './components/PointPanel'
 import { ShapePanel } from './components/ShapePanel'
 import { AddElementPanel, type AddType } from './components/AddElementPanel'
+import { StationsPanel } from './components/StationsPanel'
 import { CommandBar } from './components/CommandBar'
 import { ProjectOverview } from './components/ProjectOverview'
 import { AreaHistory } from './components/AreaHistory'
@@ -14,12 +15,12 @@ import { downloadProject, readProjectFile } from './io/projectFile'
 import { loadProject, saveProject } from './storage/db'
 import { areaMissingCount, movePointForLength, pointMap, wallLength } from './domain/geometry'
 import { addHistory, withArea } from './domain/operations'
-import { makeDemoProject, makeEmptyArea, newId, nowIso, type Area, type AreaKind, type ElementState, type Project } from './domain/model'
+import { makeDemoProject, makeEmptyArea, newId, nextElementId, nowIso, type Area, type AreaKind, type ElementState, type Project } from './domain/model'
 import './styles.css'
 
 const WALL_STATE_LABEL: Record<ElementState, string> = { existing: 'istniejąca', reconstructed: 'odtworzona', proposed: 'projektowana' }
 
-type Tab = 'plan' | 'sections' | 'measurements' | 'sessions' | 'history' | 'data'
+type Tab = 'plan' | 'sections' | 'measurements' | 'sessions' | 'history' | 'data' | 'stations'
 type Screen = 'overview' | 'area'
 
 export default function App() {
@@ -195,6 +196,76 @@ export default function App() {
     })
   }
 
+  const addStation = (label: string, x: number, y: number, z: number) => {
+    updateArea((a) => {
+      const id = newId('ST')
+      const stations = [...(a.stations ?? []), { id, label, position: { x, y, z }, source: 'manual' as const }]
+      return addHistory({ ...a, stations }, { action: 'created', entityType: 'station', entityId: id, summary: `Utworzono stanowisko ${label}` })
+    })
+  }
+
+  const createSurvey = (name: string) => {
+    updateArea((a) => {
+      const id = newId('SV')
+      const survey = { id, name, plane: 'xy' as const, stationIds: (a.stations ?? []).map((s) => s.id), targetOrder: [], observations: [] }
+      const stationSurveys = [...(a.stationSurveys ?? []), survey]
+      return addHistory({ ...a, stationSurveys }, { action: 'created', entityType: 'survey', entityId: id, summary: `Utworzono pomiar ze stanowisk „${name}”` })
+    })
+  }
+
+  const addTargetToSurvey = (surveyId: string, pointId: string) => {
+    updateArea((a) => {
+      const surveys = a.stationSurveys ?? []
+      const survey = surveys.find((s) => s.id === surveyId)
+      if (!survey || survey.targetOrder.includes(pointId)) return a
+      const pointExists = a.points.some((p) => p.id === pointId)
+      const points = pointExists ? a.points : [...a.points, { id: pointId, position: { x: 0, y: 0, z: 0 }, source: 'derived' as const, state: 'existing' as const }]
+      const stationSurveys = surveys.map((s) => s.id === surveyId ? { ...s, targetOrder: [...s.targetOrder, pointId] } : s)
+      return addHistory({ ...a, points, stationSurveys }, { action: 'created', entityType: 'survey', entityId: surveyId, summary: `Dodano target ${pointId} do pomiaru` })
+    })
+  }
+
+  const addObservation = (surveyId: string, stationId: string, targetPointId: string, distanceMm: number) => {
+    updateArea((a) => {
+      const surveys = a.stationSurveys ?? []
+      const survey = surveys.find((s) => s.id === surveyId)
+      if (!survey) return a
+      const obsId = newId('OB')
+      const observation = { id: obsId, stationId, targetPointId, distanceMm, source: 'manual' as const, createdAt: nowIso(), sessionId: a.activeSessionId }
+      const stationSurveys = surveys.map((s) => s.id === surveyId ? { ...s, observations: [...s.observations, observation] } : s)
+      const stationLabel = (a.stations ?? []).find((st) => st.id === stationId)?.label ?? stationId
+      return addHistory({ ...a, stationSurveys }, { action: 'measured', entityType: 'survey', entityId: obsId, summary: `Obserwacja: ${stationLabel} → ${targetPointId} = ${distanceMm} mm` })
+    })
+  }
+
+  const applyResolvedPoint = (pointId: string, x: number, y: number, z: number) => {
+    updateArea((a) => {
+      const exists = a.points.some((p) => p.id === pointId)
+      const points = exists
+        ? a.points.map((p) => p.id === pointId ? { ...p, position: { x, y, z }, source: 'derived' as const } : p)
+        : [...a.points, { id: pointId, position: { x, y, z }, source: 'derived' as const, state: 'existing' as const }]
+      return addHistory({ ...a, points }, { action: 'measured', entityType: 'point', entityId: pointId, summary: `Zastosowano trilaterację: ${pointId} = (${Math.round(x)}, ${Math.round(y)}, ${Math.round(z)}) mm` })
+    })
+  }
+
+  const createWallsFromOutline = (surveyId: string) => {
+    updateArea((a) => {
+      const survey = (a.stationSurveys ?? []).find((s) => s.id === surveyId)
+      if (!survey || survey.targetOrder.length < 2) return a
+      let walls = a.walls
+      const created: string[] = []
+      for (let i = 0; i < survey.targetOrder.length - 1; i++) {
+        const from = survey.targetOrder[i]; const to = survey.targetOrder[i + 1]
+        if (walls.some((w) => (w.from === from && w.to === to) || (w.from === to && w.to === from))) continue
+        const id = nextElementId(walls.map((w) => w.id), 'W')
+        walls = [...walls, { id, from, to, heightMm: 0, thicknessMm: 0, status: 'incomplete' as const, state: 'existing' as const }]
+        created.push(id)
+      }
+      if (!created.length) return a
+      return addHistory({ ...a, walls }, { action: 'created', entityType: 'wall', entityId: created[0], summary: `Utworzono ściany z obrysu: ${created.join(', ')}` })
+    })
+  }
+
   const saveShapeFields = (shapeId: string, patch: { x: number; y: number; z: number; widthMm?: number; depthMm?: number; rotationDeg?: number; diameterMm?: number; heightMm: number; state: ElementState }) => {
     updateArea((a) => {
       const shape = a.shapes.find((s) => s.id === shapeId)
@@ -280,6 +351,7 @@ export default function App() {
             <button className={tab === 'sessions' ? 'active' : ''} onClick={() => setTab('sessions')}>Sesje</button>
             <button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>Historia</button>
             <button className={tab === 'data' ? 'active' : ''} onClick={() => setTab('data')}>Dane</button>
+            <button className={tab === 'stations' ? 'active' : ''} onClick={() => setTab('stations')}>Stanowiska</button>
           </nav>
 
           <main>
@@ -366,6 +438,18 @@ export default function App() {
             {tab === 'sessions' && <SessionPanel area={area} onNewSession={addSession} onSelect={selectSession} />}
             {tab === 'history' && <AreaHistory area={area} />}
             {tab === 'data' && <div className="list-card"><h2>Dane obszaru</h2><p>Punkty: {area.points.length}</p><p>Ściany / odcinki: {area.walls.length}</p><p>Przekroje: {area.sections.length}</p><p>Pomiary: {area.measurements.length}</p><p>Sesje: {area.sessions.length}</p><p>Jednostki: mm</p><pre>{JSON.stringify(area, null, 2)}</pre></div>}
+
+            {tab === 'stations' && (
+              <StationsPanel
+                area={area}
+                onAddStation={addStation}
+                onCreateSurvey={createSurvey}
+                onAddTarget={addTargetToSurvey}
+                onAddObservation={addObservation}
+                onApplyResolvedPoint={applyResolvedPoint}
+                onCreateWallsFromOutline={createWallsFromOutline}
+              />
+            )}
           </main>
 
           <CommandBar onExecute={(command) => {

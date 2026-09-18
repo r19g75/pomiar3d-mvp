@@ -115,7 +115,7 @@ export type HistoryEntry = {
   createdAt: string
   sessionId?: Id
   action: 'created' | 'updated' | 'measured' | 'session' | 'imported'
-  entityType: 'area' | 'point' | 'wall' | 'shape' | 'section' | 'measurement' | 'session' | 'project'
+  entityType: 'area' | 'point' | 'wall' | 'shape' | 'section' | 'measurement' | 'session' | 'project' | 'station' | 'survey'
   entityId?: Id
   summary: string
 }
