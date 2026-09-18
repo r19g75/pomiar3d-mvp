@@ -1,0 +1,38 @@
+{
+  "format": "pomiar3d",
+  "version": 1,
+  "id": "demo_export",
+  "name": "Demo Pomiar 3D",
+  "units": "mm",
+  "createdAt": "2026-09-18T08:00:00.000Z",
+  "updatedAt": "2026-09-18T08:30:00.000Z",
+  "activeAreaId": "A_ROOM",
+  "areas": [
+    {
+      "id": "A_ROOM",
+      "name": "Pokój poddasze",
+      "kind": "room",
+      "createdAt": "2026-09-18T08:00:00.000Z",
+      "updatedAt": "2026-09-18T08:30:00.000Z",
+      "activePointId": "P1",
+      "activeSessionId": "S1",
+      "points": [
+        {"id":"P0","position":{"x":0,"y":0,"z":0},"source":"measured","state":"existing"},
+        {"id":"P1","position":{"x":4826,"y":0,"z":0},"source":"measured","state":"existing"},
+        {"id":"P2","position":{"x":4826,"y":3174,"z":0},"source":"measured","state":"existing"},
+        {"id":"P3","position":{"x":0,"y":3174,"z":0},"source":"derived","state":"existing"}
+      ],
+      "walls": [
+        {"id":"W01","from":"P0","to":"P1","heightMm":2638,"thicknessMm":120,"status":"measured","state":"existing"},
+        {"id":"W02","from":"P1","to":"P2","heightMm":2638,"thicknessMm":120,"status":"measured","state":"existing"},
+        {"id":"W03","from":"P2","to":"P3","heightMm":2638,"thicknessMm":120,"status":"derived","state":"reconstructed"}
+      ],
+      "sections": [],
+      "measurements": [
+        {"id":"M1","kind":"distance","from":"P0","to":"P1","valueMm":4826,"source":"manual","createdAt":"2026-09-18T08:05:00.000Z","sessionId":"S1"}
+      ],
+      "sessions": [{"id":"S1","name":"Pomiar początkowy","startedAt":"2026-09-18T08:00:00.000Z"}],
+      "history": []
+    }
+  ]
+}
