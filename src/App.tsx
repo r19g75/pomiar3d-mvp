@@ -15,7 +15,7 @@ import { downloadProject, readProjectFile } from './io/projectFile'
 import { loadProject, saveProject } from './storage/db'
 import { areaMissingCount, movePointForLength, pointMap, wallLength } from './domain/geometry'
 import { addHistory, withArea } from './domain/operations'
-import { makeDemoProject, makeEmptyArea, newId, nextElementId, nowIso, type Area, type AreaKind, type ElementState, type Project } from './domain/model'
+import { makeDemoProject, makeEmptyArea, newId, nextElementId, nowIso, type Area, type AreaKind, type ElementState, type Project, type StationSurvey } from './domain/model'
 import './styles.css'
 
 const WALL_STATE_LABEL: Record<ElementState, string> = { existing: 'istniejąca', reconstructed: 'odtworzona', proposed: 'projektowana' }
@@ -196,73 +196,102 @@ export default function App() {
     })
   }
 
-  const addStation = (label: string, x: number, y: number, z: number) => {
+  const updateSurvey = (surveyId: string, fn: (s: StationSurvey) => StationSurvey, historyEntry?: (s: StationSurvey) => { summary: string }) => {
     updateArea((a) => {
-      const id = newId('ST')
-      const stations = [...(a.stations ?? []), { id, label, position: { x, y, z }, source: 'manual' as const }]
-      return addHistory({ ...a, stations }, { action: 'created', entityType: 'station', entityId: id, summary: `Utworzono stanowisko ${label}` })
+      const surveys = a.stationSurveys ?? []
+      const survey = surveys.find((s) => s.id === surveyId)
+      if (!survey) return a
+      const updated = fn(survey)
+      const stationSurveys = surveys.map((s) => s.id === surveyId ? updated : s)
+      const next = { ...a, stationSurveys }
+      return historyEntry ? addHistory(next, { action: 'updated', entityType: 'survey', entityId: surveyId, summary: historyEntry(updated).summary }) : next
     })
   }
 
   const createSurvey = (name: string) => {
     updateArea((a) => {
       const id = newId('SV')
-      const survey = { id, name, plane: 'xy' as const, stationIds: (a.stations ?? []).map((s) => s.id), targetOrder: [], observations: [] }
+      const survey: StationSurvey = { id, name, plane: 'xy', targets: [], instrumentPositions: [], baselines: [], observations: [], sketchEdges: [] }
       const stationSurveys = [...(a.stationSurveys ?? []), survey]
-      return addHistory({ ...a, stationSurveys }, { action: 'created', entityType: 'survey', entityId: id, summary: `Utworzono pomiar ze stanowisk „${name}”` })
+      return addHistory({ ...a, stationSurveys }, { action: 'created', entityType: 'survey', entityId: id, summary: `Utworzono pomiar „${name}”` })
     })
   }
 
-  const addTargetToSurvey = (surveyId: string, pointId: string) => {
-    updateArea((a) => {
-      const surveys = a.stationSurveys ?? []
-      const survey = surveys.find((s) => s.id === surveyId)
-      if (!survey || survey.targetOrder.includes(pointId)) return a
-      const pointExists = a.points.some((p) => p.id === pointId)
-      const points = pointExists ? a.points : [...a.points, { id: pointId, position: { x: 0, y: 0, z: 0 }, source: 'derived' as const, state: 'existing' as const }]
-      const stationSurveys = surveys.map((s) => s.id === surveyId ? { ...s, targetOrder: [...s.targetOrder, pointId] } : s)
-      return addHistory({ ...a, points, stationSurveys }, { action: 'created', entityType: 'survey', entityId: surveyId, summary: `Dodano target ${pointId} do pomiaru` })
-    })
+  const addSurveyTarget = (surveyId: string, id: string, label: string, x: number, y: number) => {
+    updateSurvey(surveyId, (s) => ({ ...s, targets: [...s.targets, { id, label, sketch: { x, y }, order: s.targets.length }] }),
+      () => ({ summary: `Dodano punkt szkicu ${label}` }))
   }
 
-  const addObservation = (surveyId: string, stationId: string, targetPointId: string, distanceMm: number) => {
+  const addSurveyInstrument = (surveyId: string, id: string, label: string, x: number, y: number) => {
+    updateSurvey(surveyId, (s) => ({ ...s, instrumentPositions: [...s.instrumentPositions, { id, label, sketch: { x, y } }] }),
+      () => ({ summary: `Dodano pozycję dalmierza ${label}` }))
+  }
+
+  const moveSurveyNode = (surveyId: string, kind: 'target' | 'instrument', nodeId: string, x: number, y: number) => {
+    updateSurvey(surveyId, (s) => kind === 'target'
+      ? { ...s, targets: s.targets.map((t) => t.id === nodeId ? { ...t, sketch: { x, y } } : t) }
+      : { ...s, instrumentPositions: s.instrumentPositions.map((p) => p.id === nodeId ? { ...p, sketch: { x, y } } : p) })
+  }
+
+  const deleteSurveyNode = (surveyId: string, kind: 'target' | 'instrument', nodeId: string) => {
+    updateSurvey(surveyId, (s) => kind === 'target'
+      ? { ...s, targets: s.targets.filter((t) => t.id !== nodeId), sketchEdges: s.sketchEdges.filter((e) => e.from !== nodeId && e.to !== nodeId), observations: s.observations.filter((o) => o.targetId !== nodeId) }
+      : { ...s, instrumentPositions: s.instrumentPositions.filter((p) => p.id !== nodeId), baselines: s.baselines.filter((b) => b.fromInstrumentId !== nodeId && b.toInstrumentId !== nodeId), observations: s.observations.filter((o) => o.instrumentPositionId !== nodeId) },
+      () => ({ summary: `Usunięto ${kind === 'target' ? 'punkt' : 'pozycję dalmierza'} ${nodeId}` }))
+  }
+
+  const addSurveyBaseline = (surveyId: string, fromInstrumentId: string, toInstrumentId: string, distanceMm: number) => {
+    updateSurvey(surveyId, (s) => ({ ...s, baselines: [...s.baselines.filter((b) => !(b.fromInstrumentId === fromInstrumentId && b.toInstrumentId === toInstrumentId)), { fromInstrumentId, toInstrumentId, distanceMm }] }),
+      () => ({ summary: `Baza ${fromInstrumentId}-${toInstrumentId} = ${distanceMm} mm` }))
+  }
+
+  const addSurveyObservation = (surveyId: string, instrumentPositionId: string, targetId: string, distanceMm: number) => {
+    updateSurvey(surveyId, (s) => ({ ...s, observations: [...s.observations, { id: newId('SOB'), instrumentPositionId, targetId, distanceMm, source: 'manual', createdAt: nowIso(), sessionId: area?.activeSessionId }] }),
+      () => ({ summary: `Odczyt: ${instrumentPositionId} → ${targetId} = ${distanceMm} mm` }))
+  }
+
+  const addSurveyEdge = (surveyId: string, from: string, to: string) => {
+    updateSurvey(surveyId, (s) => s.sketchEdges.some((e) => (e.from === from && e.to === to) || (e.from === to && e.to === from)) ? s : { ...s, sketchEdges: [...s.sketchEdges, { from, to }] })
+  }
+
+  const restoreSurvey = (surveyId: string, snapshot: StationSurvey) => {
+    updateSurvey(surveyId, () => snapshot)
+  }
+
+  const transferSurveyTargets = (surveyId: string, targetIds: string[], resolvedById: Map<string, { x: number; y: number; z: number }>, withEdges: boolean) => {
     updateArea((a) => {
       const surveys = a.stationSurveys ?? []
       const survey = surveys.find((s) => s.id === surveyId)
       if (!survey) return a
-      const obsId = newId('OB')
-      const observation = { id: obsId, stationId, targetPointId, distanceMm, source: 'manual' as const, createdAt: nowIso(), sessionId: a.activeSessionId }
-      const stationSurveys = surveys.map((s) => s.id === surveyId ? { ...s, observations: [...s.observations, observation] } : s)
-      const stationLabel = (a.stations ?? []).find((st) => st.id === stationId)?.label ?? stationId
-      return addHistory({ ...a, stationSurveys }, { action: 'measured', entityType: 'survey', entityId: obsId, summary: `Obserwacja: ${stationLabel} → ${targetPointId} = ${distanceMm} mm` })
-    })
-  }
-
-  const applyResolvedPoint = (pointId: string, x: number, y: number, z: number) => {
-    updateArea((a) => {
-      const exists = a.points.some((p) => p.id === pointId)
-      const points = exists
-        ? a.points.map((p) => p.id === pointId ? { ...p, position: { x, y, z }, source: 'derived' as const } : p)
-        : [...a.points, { id: pointId, position: { x, y, z }, source: 'derived' as const, state: 'existing' as const }]
-      return addHistory({ ...a, points }, { action: 'measured', entityType: 'point', entityId: pointId, summary: `Zastosowano trilaterację: ${pointId} = (${Math.round(x)}, ${Math.round(y)}, ${Math.round(z)}) mm` })
-    })
-  }
-
-  const createWallsFromOutline = (surveyId: string) => {
-    updateArea((a) => {
-      const survey = (a.stationSurveys ?? []).find((s) => s.id === surveyId)
-      if (!survey || survey.targetOrder.length < 2) return a
-      let walls = a.walls
-      const created: string[] = []
-      for (let i = 0; i < survey.targetOrder.length - 1; i++) {
-        const from = survey.targetOrder[i]; const to = survey.targetOrder[i + 1]
-        if (walls.some((w) => (w.from === from && w.to === to) || (w.from === to && w.to === from))) continue
-        const id = nextElementId(walls.map((w) => w.id), 'W')
-        walls = [...walls, { id, from, to, heightMm: 0, thicknessMm: 0, status: 'incomplete' as const, state: 'existing' as const }]
-        created.push(id)
+      let points = a.points
+      const idMap = new Map<string, string>() // targetId -> areaPointId
+      const targetsToTransfer = survey.targets.filter((t) => targetIds.includes(t.id))
+      for (const t of targetsToTransfer) {
+        const pos = resolvedById.get(t.id)
+        if (!pos) continue
+        const pointId = t.linkedPointId ?? nextElementId(points.map((p) => p.id), 'P')
+        idMap.set(t.id, pointId)
+        const exists = points.some((p) => p.id === pointId)
+        points = exists
+          ? points.map((p) => p.id === pointId ? { ...p, position: pos, source: 'derived' as const } : p)
+          : [...points, { id: pointId, position: pos, source: 'derived' as const, state: 'existing' as const }]
       }
-      if (!created.length) return a
-      return addHistory({ ...a, walls }, { action: 'created', entityType: 'wall', entityId: created[0], summary: `Utworzono ściany z obrysu: ${created.join(', ')}` })
+      let walls = a.walls
+      if (withEdges) {
+        for (const edge of survey.sketchEdges) {
+          const from = idMap.get(edge.from) ?? survey.targets.find((t) => t.id === edge.from)?.linkedPointId
+          const to = idMap.get(edge.to) ?? survey.targets.find((t) => t.id === edge.to)?.linkedPointId
+          if (!from || !to) continue
+          if (walls.some((w) => (w.from === from && w.to === to) || (w.from === to && w.to === from))) continue
+          const id = nextElementId(walls.map((w) => w.id), 'W')
+          walls = [...walls, { id, from, to, heightMm: 0, thicknessMm: 0, status: 'incomplete' as const, state: 'existing' as const }]
+        }
+      }
+      const stationSurveys = surveys.map((s) => s.id !== surveyId ? s : ({ ...s, targets: s.targets.map((t) => idMap.has(t.id) ? { ...t, linkedPointId: idMap.get(t.id) } : t) }))
+      return addHistory({ ...a, points, walls, stationSurveys }, {
+        action: 'created', entityType: 'point', entityId: targetsToTransfer[0]?.id ?? surveyId,
+        summary: `Przeniesiono na Rzut: ${targetsToTransfer.map((t) => t.label).join(', ')}`
+      })
     })
   }
 
@@ -442,12 +471,16 @@ export default function App() {
             {tab === 'stations' && (
               <StationsPanel
                 area={area}
-                onAddStation={addStation}
                 onCreateSurvey={createSurvey}
-                onAddTarget={addTargetToSurvey}
-                onAddObservation={addObservation}
-                onApplyResolvedPoint={applyResolvedPoint}
-                onCreateWallsFromOutline={createWallsFromOutline}
+                onAddTarget={addSurveyTarget}
+                onAddInstrument={addSurveyInstrument}
+                onMoveNode={moveSurveyNode}
+                onDeleteNode={deleteSurveyNode}
+                onAddBaseline={addSurveyBaseline}
+                onAddObservation={addSurveyObservation}
+                onAddEdge={addSurveyEdge}
+                onRestoreSurvey={restoreSurvey}
+                onTransferToRzut={transferSurveyTargets}
               />
             )}
           </main>

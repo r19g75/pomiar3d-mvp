@@ -1,225 +1,252 @@
 import { useMemo, useState } from 'react'
-import type { Area, StationObservation, StationSurvey, SurveyStation } from '../domain/model'
-import { circleIntersections, pickByThirdStation, type Vec2 } from '../domain/trilateration'
+import type { Area, StationSurvey } from '../domain/model'
+import { newId } from '../domain/model'
+import { resolveInstrumentPositions, resolveTarget, targetStatus, type TargetResolution } from '../domain/survey'
+import { SketchCanvas, type SketchEdge, type SketchNode } from './SketchCanvas'
 
-const RESIDUAL_WARN_MM = 50
+type AddMode = 'target' | 'instrument' | null
 
-export function StationsPanel({ area, onAddStation, onCreateSurvey, onAddTarget, onAddObservation, onApplyResolvedPoint, onCreateWallsFromOutline }: {
+const RESOLUTION_LABEL: Record<TargetResolution['kind'], string> = {
+  none: 'okręgi się nie przecinają',
+  insufficient: 'potrzebny drugi odczyt',
+  unique: 'rozwiązanie jednoznaczne',
+  'sketch-picked': 'strona wybrana ze szkicu',
+  ambiguous: 'dwa rozwiązania — wybierz',
+  resolved3: 'rozstrzygnięte trzecim odczytem'
+}
+
+export function StationsPanel({ area, onCreateSurvey, onAddTarget, onAddInstrument, onMoveNode, onDeleteNode, onAddBaseline, onAddObservation, onAddEdge, onRestoreSurvey, onTransferToRzut }: {
   area: Area
-  onAddStation: (label: string, x: number, y: number, z: number) => void
   onCreateSurvey: (name: string) => void
-  onAddTarget: (surveyId: string, pointId: string) => void
-  onAddObservation: (surveyId: string, stationId: string, targetPointId: string, distanceMm: number) => void
-  onApplyResolvedPoint: (pointId: string, x: number, y: number, z: number) => void
-  onCreateWallsFromOutline: (surveyId: string) => void
+  onAddTarget: (surveyId: string, id: string, label: string, x: number, y: number) => void
+  onAddInstrument: (surveyId: string, id: string, label: string, x: number, y: number) => void
+  onMoveNode: (surveyId: string, kind: 'target' | 'instrument', nodeId: string, x: number, y: number) => void
+  onDeleteNode: (surveyId: string, kind: 'target' | 'instrument', nodeId: string) => void
+  onAddBaseline: (surveyId: string, fromInstrumentId: string, toInstrumentId: string, distanceMm: number) => void
+  onAddObservation: (surveyId: string, instrumentPositionId: string, targetId: string, distanceMm: number) => void
+  onAddEdge: (surveyId: string, from: string, to: string) => void
+  onRestoreSurvey: (surveyId: string, snapshot: StationSurvey) => void
+  onTransferToRzut: (surveyId: string, targetIds: string[], resolvedById: Map<string, { x: number; y: number; z: number }>, withEdges: boolean) => void
 }) {
-  const stations = area.stations ?? []
   const surveys = area.stationSurveys ?? []
   const survey = surveys[surveys.length - 1]
+  const [surveyName, setSurveyName] = useState('Pomiar 1')
+  const [addMode, setAddMode] = useState<AddMode>(null)
+  const [linkMode, setLinkMode] = useState(false)
+  const [linkFrom, setLinkFrom] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [view, setView] = useState<'sketch' | 'result' | 'both'>('sketch')
+  const [prevSnapshot, setPrevSnapshot] = useState<StationSurvey | null>(null)
+  const [pendingBaselineTo, setPendingBaselineTo] = useState<string | null>(null)
+  const [baselineValue, setBaselineValue] = useState('')
+  const [obsInstrument, setObsInstrument] = useState('')
+  const [obsValue, setObsValue] = useState('')
+  const [transferEdges, setTransferEdges] = useState(false)
 
-  const [stLabel, setStLabel] = useState(stations.length === 0 ? 'S1' : `S${stations.length + 1}`)
-  const [stX, setStX] = useState('0')
-  const [stY, setStY] = useState(stations.length === 1 ? '3000' : '0')
-  const [stZ, setStZ] = useState('0')
-  const [surveyName, setSurveyName] = useState('Pomiar ze stanowisk 1')
-  const [newTargetId, setNewTargetId] = useState('')
+  const resolvedInstruments = useMemo(() => survey ? resolveInstrumentPositions(survey) : new Map(), [survey])
+  const resolutions = useMemo(() => {
+    const map = new Map<string, TargetResolution>()
+    if (survey) for (const t of survey.targets) map.set(t.id, resolveTarget(t, survey, resolvedInstruments))
+    return map
+  }, [survey, resolvedInstruments])
 
-  const addStation = () => {
-    const x = Number(stX.replace(',', '.')); const y = Number(stY.replace(',', '.')); const z = Number(stZ.replace(',', '.'))
-    if (!stLabel.trim() || ![x, y, z].every(Number.isFinite)) return
-    onAddStation(stLabel.trim(), x, y, z)
-    setStLabel(`S${stations.length + 2}`)
+  if (!survey) {
+    return (
+      <div className="list-card">
+        <div className="card-title"><h2>Stanowiska</h2></div>
+        <p className="muted">Pomiar ze stanowisk: rysujesz orientacyjny szkic, stawiasz pozycje dalmierza D1/D2, wpisujesz same odległości — aplikacja liczy geometrię. Nie wymaga podawania współrzędnych X/Y/Z.</p>
+        <div className="wall-edit">
+          <label>Nazwa pomiaru<input value={surveyName} onChange={(e) => setSurveyName(e.target.value)} /></label>
+          <button className="primary wide" onClick={() => onCreateSurvey(surveyName.trim() || 'Pomiar 1')}>Nowy pomiar ze stanowisk</button>
+        </div>
+      </div>
+    )
   }
 
-  const addTarget = () => {
-    if (!survey || !newTargetId.trim()) return
-    onAddTarget(survey.id, newTargetId.trim())
-    setNewTargetId('')
+  const beforeMutate = () => setPrevSnapshot(survey)
+
+  const startAdd = (mode: AddMode) => { beforeMutate(); setAddMode(mode); setLinkMode(false) }
+
+  const handleAddNode = (x: number, y: number) => {
+    if (addMode === 'target') {
+      const id = newId('SPT')
+      onAddTarget(survey.id, id, `P${survey.targets.length + 1}`, x, y)
+    } else if (addMode === 'instrument') {
+      const id = newId('SDI')
+      const prev = survey.instrumentPositions[survey.instrumentPositions.length - 1]
+      onAddInstrument(survey.id, id, `D${survey.instrumentPositions.length + 1}`, x, y)
+      if (prev) { setPendingBaselineTo(id); setBaselineValue('') }
+    }
+    setAddMode(null)
   }
+
+  const handleSelect = (id: string) => {
+    if (linkMode) {
+      if (linkFrom && linkFrom !== id) { beforeMutate(); onAddEdge(survey.id, linkFrom, id); setLinkFrom(null); setLinkMode(false) }
+      else setLinkFrom(id)
+      return
+    }
+    setSelectedId(id)
+  }
+
+  const handleMove = (id: string, x: number, y: number) => {
+    const kind = survey.targets.some((t) => t.id === id) ? 'target' : 'instrument'
+    onMoveNode(survey.id, kind, id, x, y)
+  }
+
+  const undo = () => { if (prevSnapshot) { onRestoreSurvey(survey.id, prevSnapshot); setPrevSnapshot(null) } }
+
+  const deleteSelected = () => {
+    if (!selectedId) return
+    beforeMutate()
+    const kind = survey.targets.some((t) => t.id === selectedId) ? 'target' : 'instrument'
+    onDeleteNode(survey.id, kind, selectedId)
+    setSelectedId(null)
+  }
+
+  const submitBaseline = () => {
+    const v = Number(baselineValue.replace(',', '.'))
+    if (!pendingBaselineTo || !Number.isFinite(v) || v <= 0) return
+    const prev = survey.instrumentPositions[survey.instrumentPositions.length - 2]
+    if (prev) onAddBaseline(survey.id, prev.id, pendingBaselineTo, v)
+    setPendingBaselineTo(null)
+  }
+
+  const selectedTarget = survey.targets.find((t) => t.id === selectedId)
+  const selectedInstrument = survey.instrumentPositions.find((p) => p.id === selectedId)
+
+  const submitObservation = () => {
+    if (!selectedTarget || !obsInstrument) return
+    const v = Number(obsValue.replace(',', '.'))
+    if (!Number.isFinite(v) || v <= 0) return
+    beforeMutate()
+    onAddObservation(survey.id, obsInstrument, selectedTarget.id, v)
+    setObsValue('')
+  }
+
+  const sketchNodes: SketchNode[] = [
+    ...survey.targets.map((t): SketchNode => ({ id: t.id, label: t.label, x: t.sketch.x, y: t.sketch.y, kind: 'target', status: targetStatus(resolutions.get(t.id) ?? { kind: 'none' }) })),
+    ...survey.instrumentPositions.map((p): SketchNode => ({ id: p.id, label: p.label, x: p.sketch.x, y: p.sketch.y, kind: 'instrument' }))
+  ]
+  const sketchEdges: SketchEdge[] = survey.sketchEdges
+
+  const resultBounds = (() => {
+    const pts = [
+      ...Array.from(resolvedInstruments.values()).map((p) => ({ x: p.x, y: p.y })),
+      ...Array.from(resolutions.values()).flatMap((r) => r.kind === 'unique' || r.kind === 'sketch-picked' || r.kind === 'resolved3' ? [r.point] : r.kind === 'ambiguous' ? r.points : [])
+    ]
+    if (!pts.length) return null
+    const minX = Math.min(...pts.map((p) => p.x)); const maxX = Math.max(...pts.map((p) => p.x))
+    const minY = Math.min(...pts.map((p) => p.y)); const maxY = Math.max(...pts.map((p) => p.y))
+    const span = Math.max(maxX - minX, maxY - minY, 1)
+    const scale = 1600 / span
+    return { minX, minY, scale }
+  })()
+  const toResultXY = (x: number, y: number) => resultBounds ? { x: (x - resultBounds.minX) * resultBounds.scale + 200, y: (y - resultBounds.minY) * resultBounds.scale + 200 } : { x: 1000, y: 1000 }
+
+  const resultNodes: SketchNode[] = resultBounds ? [
+    ...survey.instrumentPositions.map((p): SketchNode => { const rp = resolvedInstruments.get(p.id); const xy = rp ? toResultXY(rp.x, rp.y) : { x: 0, y: 0 }; return { id: p.id, label: p.label, x: xy.x, y: xy.y, kind: 'instrument' } }),
+    ...survey.targets.filter((t) => {
+      const r = resolutions.get(t.id)
+      return r && (r.kind === 'unique' || r.kind === 'sketch-picked' || r.kind === 'resolved3')
+    }).map((t): SketchNode => {
+      const r = resolutions.get(t.id)!
+      const point = r.kind === 'ambiguous' ? r.points[0] : (r as { point: { x: number; y: number } }).point
+      const xy = toResultXY(point.x, point.y)
+      return { id: t.id, label: t.label, x: xy.x, y: xy.y, kind: 'target', status: targetStatus(r) }
+    })
+  ] : []
+
+  const doneCount = survey.targets.filter((t) => targetStatus(resolutions.get(t.id) ?? { kind: 'none' }) === 'done').length
 
   return (
     <div className="list-card">
-      <div className="card-title"><h2>Stanowiska (trilateracja)</h2><span>{stations.length} stanowisk</span></div>
-      <p className="muted">Pomiar ze stanowisk (trilateracja): dwa lub trzy stanowiska i odległości do punktów wyznaczają ich położenie. Nie miesza się z ręcznym rysowaniem ścian na Rzucie.</p>
-      <p className="muted"><small>Stanowisko oznacza punkt odniesienia dalmierza. Przy obrocie powinien pozostawać możliwie stały.</small></p>
+      <div className="card-title"><h2>Stanowiska — {survey.name}</h2><span>{doneCount}/{survey.targets.length} punktów gotowych</span></div>
+      <p className="muted"><small>Szkic orientacyjny — proporcje nie muszą być dokładne. Stanowisko/pozycja dalmierza oznacza jego punkt odniesienia; przy obrocie powinien pozostawać możliwie stały.</small></p>
 
-      <h3>Stanowiska</h3>
-      {stations.length === 0 && <p>Brak stanowisk. Dodaj S1 (np. (0,0,0)) i S2 (baza, np. (3000,0,0)) — baza musi być zmierzona, nie „około”.</p>}
-      <div className="session-list">
-        {stations.map((s) => (
-          <div className="session-row" key={s.id}>
-            <span><strong>{s.label ?? s.id}</strong><small>x={s.position.x} y={s.position.y} z={s.position.z} mm</small></span>
+      <div className="section-tabs">
+        <button className={view === 'sketch' ? 'active' : ''} onClick={() => setView('sketch')}>Szkic</button>
+        <button className={view === 'result' ? 'active' : ''} onClick={() => setView('result')}>Wynik</button>
+        <button className={view === 'both' ? 'active' : ''} onClick={() => setView('both')}>Oba</button>
+      </div>
+
+      <div className="section-tabs">
+        <button className={addMode === 'target' ? 'active' : ''} onClick={() => startAdd('target')}>+ Punkt</button>
+        <button className={addMode === 'instrument' ? 'active' : ''} onClick={() => startAdd('instrument')}>+ Pozycja dalmierza</button>
+        <button className={linkMode ? 'active' : ''} onClick={() => { setLinkMode((v) => !v); setLinkFrom(null); setAddMode(null) }}>Łącz punkty</button>
+        <button disabled={!prevSnapshot} onClick={undo}>Cofnij</button>
+        <button disabled={!selectedId} onClick={deleteSelected}>Usuń zaznaczony</button>
+      </div>
+
+      {(view === 'sketch' || view === 'both') && (
+        <SketchCanvas nodes={sketchNodes} edges={sketchEdges} selectedId={selectedId ?? undefined} addMode={addMode !== null} onAddNode={handleAddNode} onSelectNode={handleSelect} onMoveNode={handleMove} />
+      )}
+      {(view === 'result' || view === 'both') && (
+        <SketchCanvas nodes={resultNodes} edges={[]} addMode={false} onAddNode={() => {}} onSelectNode={() => {}} onMoveNode={() => {}} />
+      )}
+
+      {pendingBaselineTo && (
+        <div className="wall-edit">
+          <label>Baza {survey.instrumentPositions[survey.instrumentPositions.length - 2]?.label} — {survey.instrumentPositions[survey.instrumentPositions.length - 1]?.label} [mm]
+            <input value={baselineValue} onChange={(e) => setBaselineValue(e.target.value)} inputMode="decimal" autoFocus />
+          </label>
+          <small>Rzeczywista zmierzona odległość między punktami odniesienia dalmierza — nie „w przybliżeniu”.</small>
+          <button className="primary wide" onClick={submitBaseline}>Zapisz bazę</button>
+        </div>
+      )}
+
+      {selectedTarget && (
+        <div className="check-card">
+          <div className="card-title"><h3>{selectedTarget.label}</h3><span>{RESOLUTION_LABEL[(resolutions.get(selectedTarget.id) ?? { kind: 'none' }).kind]}</span></div>
+          {survey.instrumentPositions.length === 0 && <p className="muted">Dodaj najpierw pozycję dalmierza.</p>}
+          <div className="session-list">
+            {survey.instrumentPositions.map((p) => {
+              const obs = [...survey.observations].reverse().find((o) => o.instrumentPositionId === p.id && o.targetId === selectedTarget.id)
+              return <div className="session-row" key={p.id}><span>{p.label}</span><span>{obs ? `${obs.distanceMm} mm` : '—'}</span></div>
+            })}
           </div>
-        ))}
-      </div>
-      <div className="wall-edit">
-        <label>Etykieta<input value={stLabel} onChange={(e) => setStLabel(e.target.value)} /></label>
-        <label>X [mm]<input value={stX} onChange={(e) => setStX(e.target.value)} inputMode="decimal" /></label>
-        <label>Y [mm]<input value={stY} onChange={(e) => setStY(e.target.value)} inputMode="decimal" /></label>
-        <label>Z [mm]<input value={stZ} onChange={(e) => setStZ(e.target.value)} inputMode="decimal" /></label>
-        <button className="secondary wide" onClick={addStation}>+ Dodaj stanowisko</button>
-      </div>
-
-      <h3>Pomiar</h3>
-      {!survey ? (
-        <div className="wall-edit">
-          <label>Nazwa pomiaru<input value={surveyName} onChange={(e) => setSurveyName(e.target.value)} /></label>
-          <button className="primary wide" disabled={stations.length < 2} onClick={() => onCreateSurvey(surveyName.trim() || 'Pomiar ze stanowisk')}>Nowy pomiar ze stanowisk</button>
-          {stations.length < 2 && <small>Potrzebne są co najmniej dwa stanowiska.</small>}
-        </div>
-      ) : (
-        <SurveyBody
-          area={area}
-          survey={survey}
-          stations={stations}
-          onAddObservation={onAddObservation}
-          onApplyResolvedPoint={onApplyResolvedPoint}
-          onCreateWallsFromOutline={onCreateWallsFromOutline}
-        />
-      )}
-      {survey && (
-        <div className="wall-edit">
-          <label>Nowy punkt docelowy (ID, np. P5)<input value={newTargetId} onChange={(e) => setNewTargetId(e.target.value)} /></label>
-          <button className="secondary wide" onClick={addTarget}>+ Dodaj target do pomiaru</button>
+          {survey.instrumentPositions.length > 0 && (
+            <div className="wall-edit">
+              <label>Pozycja dalmierza
+                <select value={obsInstrument} onChange={(e) => setObsInstrument(e.target.value)}>
+                  <option value="">wybierz…</option>
+                  {survey.instrumentPositions.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+                </select>
+              </label>
+              <label>Odległość [mm]<input value={obsValue} onChange={(e) => setObsValue(e.target.value)} inputMode="decimal" /></label>
+              <button className="primary wide" onClick={submitObservation}>+ Zapisz odczyt</button>
+            </div>
+          )}
+          {(() => {
+            const r = resolutions.get(selectedTarget.id)
+            if (r?.kind === 'resolved3') return <div className="wall-info-row"><span>Residuum</span><strong>{r.residualMm.toFixed(1)} mm</strong></div>
+            return null
+          })()}
         </div>
       )}
-    </div>
-  )
-}
 
-function SurveyBody({ area, survey, stations, onAddObservation, onApplyResolvedPoint, onCreateWallsFromOutline }: {
-  area: Area
-  survey: StationSurvey
-  stations: SurveyStation[]
-  onAddObservation: (surveyId: string, stationId: string, targetPointId: string, distanceMm: number) => void
-  onApplyResolvedPoint: (pointId: string, x: number, y: number, z: number) => void
-  onCreateWallsFromOutline: (surveyId: string) => void
-}) {
-  return (
-    <div>
-      <div className="wall-info-row"><span>Plan</span><strong>{survey.plane.toUpperCase()}</strong></div>
-      <div className="wall-info-row"><span>Targety</span><strong>{survey.targetOrder.join(', ') || 'brak'}</strong></div>
-      {survey.targetOrder.map((targetId) => (
-        <TargetRow
-          key={targetId}
-          targetId={targetId}
-          area={area}
-          survey={survey}
-          stations={stations}
-          onAddObservation={onAddObservation}
-          onApplyResolvedPoint={onApplyResolvedPoint}
-        />
-      ))}
-      <button className="secondary wide" disabled={survey.targetOrder.length < 2} onClick={() => onCreateWallsFromOutline(survey.id)}>Utwórz ściany z obrysu</button>
-    </div>
-  )
-}
-
-function TargetRow({ targetId, area, survey, stations, onAddObservation, onApplyResolvedPoint }: {
-  targetId: string
-  area: Area
-  survey: StationSurvey
-  stations: SurveyStation[]
-  onAddObservation: (surveyId: string, stationId: string, targetPointId: string, distanceMm: number) => void
-  onApplyResolvedPoint: (pointId: string, x: number, y: number, z: number) => void
-}) {
-  const [stationId, setStationId] = useState(stations[0]?.id ?? '')
-  const [distance, setDistance] = useState('')
-  const [pickedSide, setPickedSide] = useState<0 | 1>(0)
-
-  const observations = survey.observations.filter((o) => o.targetPointId === targetId)
-  const byStation = (sid: string) => observations.filter((o) => o.stationId === sid).slice(-1)[0]
-
-  const submit = () => {
-    const v = Number(distance.replace(',', '.'))
-    if (!stationId || !Number.isFinite(v) || v <= 0) return
-    onAddObservation(survey.id, stationId, targetId, v)
-    setDistance('')
-  }
-
-  const resolution = useMemo(() => resolveTarget(observations, stations), [observations, stations])
-  const point = area.points.find((p) => p.id === targetId)
-
-  return (
-    <div className="check-card">
-      <div className="card-title"><h3>Target {targetId}</h3>{point && <span>{point.position.x}/{point.position.y}/{point.position.z} mm</span>}</div>
-      {observations.length === 0 && <p className="muted">Brak odczytów.</p>}
-      {observations.length > 0 && (
-        <div className="session-list">
-          {stations.map((s) => {
-            const obs = byStation(s.id)
-            return obs ? <div className="session-row" key={s.id}><span>{s.label ?? s.id}: {obs.distanceMm} mm</span></div> : null
-          })}
+      {selectedInstrument && !selectedTarget && (
+        <div className="check-card">
+          <div className="card-title"><h3>{selectedInstrument.label}</h3></div>
+          <div className="wall-info-row"><span>Pozycja rozwiązana</span><strong>{resolvedInstruments.get(selectedInstrument.id) ? `${Math.round(resolvedInstruments.get(selectedInstrument.id)!.x)}, ${Math.round(resolvedInstruments.get(selectedInstrument.id)!.y)} mm` : 'brak bazy'}</strong></div>
         </div>
       )}
 
       <div className="wall-edit">
-        <label>Stanowisko
-          <select value={stationId} onChange={(e) => setStationId(e.target.value)}>
-            {stations.map((s) => <option key={s.id} value={s.id}>{s.label ?? s.id}</option>)}
-          </select>
-        </label>
-        <label>Odległość [mm]<input value={distance} onChange={(e) => setDistance(e.target.value)} inputMode="decimal" /></label>
-        <button className="secondary wide" onClick={submit}>+ Dodaj odczyt</button>
+        <label><input type="checkbox" checked={transferEdges} onChange={(e) => setTransferEdges(e.target.checked)} /> też jako odcinki (niekompletne ściany)</label>
+        <button
+          className="primary wide"
+          disabled={doneCount === 0}
+          onClick={() => {
+            const resolvedById = new Map<string, { x: number; y: number; z: number }>()
+            for (const t of survey.targets) {
+              const r = resolutions.get(t.id)
+              if (r && (r.kind === 'unique' || r.kind === 'sketch-picked' || r.kind === 'resolved3')) resolvedById.set(t.id, { x: r.point.x, y: r.point.y, z: 0 })
+            }
+            onTransferToRzut(survey.id, Array.from(resolvedById.keys()), resolvedById, transferEdges)
+          }}
+        >Przenieś rozwiązane punkty na Rzut</button>
       </div>
-
-      {resolution && (
-        <div className="wall-info-row">
-          <span>Rozwiązanie</span>
-          <strong>
-            {resolution.kind === 'unique' && `(${Math.round(resolution.point.x)}, ${Math.round(resolution.point.y)}) mm`}
-            {resolution.kind === 'resolved3' && `(${Math.round(resolution.point.x)}, ${Math.round(resolution.point.y)}) mm · residuum ${resolution.residualMm.toFixed(1)} mm${resolution.residualMm > RESIDUAL_WARN_MM ? ' · DO KONTROLI' : ''}`}
-            {resolution.kind === 'ambiguous' && 'dwa rozwiązania — wybierz stronę'}
-            {resolution.kind === 'none' && 'okręgi się nie przecinają — sprawdź odczyty/pozycje stanowisk'}
-          </strong>
-        </div>
-      )}
-
-      {resolution?.kind === 'ambiguous' && (
-        <div className="section-tabs">
-          <button className={pickedSide === 0 ? 'active' : ''} onClick={() => setPickedSide(0)}>Strona A ({Math.round(resolution.points[0].x)}, {Math.round(resolution.points[0].y)})</button>
-          <button className={pickedSide === 1 ? 'active' : ''} onClick={() => setPickedSide(1)}>Strona B ({Math.round(resolution.points[1].x)}, {Math.round(resolution.points[1].y)})</button>
-        </div>
-      )}
-
-      {(resolution?.kind === 'unique' || resolution?.kind === 'resolved3' || resolution?.kind === 'ambiguous') && (
-        <button className="primary wide" onClick={() => {
-          const p = resolution.kind === 'ambiguous' ? resolution.points[pickedSide] : resolution.point
-          onApplyResolvedPoint(targetId, p.x, p.y, area.points.find((pt) => pt.id === targetId)?.position.z ?? 0)
-        }}>Zastosuj do punktu {targetId}</button>
-      )}
     </div>
   )
-}
-
-type Resolution =
-  | { kind: 'none' }
-  | { kind: 'unique'; point: Vec2 }
-  | { kind: 'ambiguous'; points: [Vec2, Vec2] }
-  | { kind: 'resolved3'; point: Vec2; residualMm: number }
-
-function resolveTarget(observations: StationObservation[], stations: SurveyStation[]): Resolution | null {
-  // Bierzemy tylko najnowszy odczyt per stanowisko - poprzednie zostają w historii,
-  // ale rozwiazanie zawsze liczymy z aktualnej interpretacji, nie z pierwszego wpisu.
-  const latestByStation = new Map<string, StationObservation>()
-  for (const o of observations) latestByStation.set(o.stationId, o)
-  const byStation = new Map(stations.map((s) => [s.id, s]))
-  const withPos = Array.from(latestByStation.values())
-    .map((o) => ({ obs: o, station: byStation.get(o.stationId) }))
-    .filter((x): x is { obs: StationObservation; station: SurveyStation } => !!x.station)
-  if (withPos.length < 2) return null
-
-  const [first, second, third] = withPos
-  const candidates = circleIntersections(
-    { x: first.station.position.x, y: first.station.position.y }, first.obs.distanceMm,
-    { x: second.station.position.x, y: second.station.position.y }, second.obs.distanceMm
-  )
-  if (candidates.length === 0) return { kind: 'none' }
-  if (candidates.length === 1) return { kind: 'unique', point: candidates[0] }
-
-  if (third) {
-    const picked = pickByThirdStation(candidates, { x: third.station.position.x, y: third.station.position.y }, third.obs.distanceMm)
-    if (picked) return { kind: 'resolved3', point: picked.point, residualMm: picked.residualMm }
-  }
-  return { kind: 'ambiguous', points: [candidates[0], candidates[1]] }
 }
