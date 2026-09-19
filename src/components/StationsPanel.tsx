@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import type { Area, StationSurvey } from '../domain/model'
 import { newId, nextElementId } from '../domain/model'
 import { checkPointIntegrity } from '../domain/integrity'
-import { planTransfer, resolveInstrumentPositions, resolveTarget, targetStatus, type TargetResolution, type TransferItem } from '../domain/survey'
+import { baselineBetween, planTransfer, resolveInstrumentPositions, resolveTarget, targetStatus, type TargetResolution, type TransferItem } from '../domain/survey'
 import { SketchCanvas, type SketchEdge, type SketchNode } from './SketchCanvas'
 
 type AddMode = 'target' | 'instrument' | null
@@ -45,6 +45,8 @@ export function StationsPanel({ area, onCreateSurvey, onAddTarget, onAddInstrume
   const [baselineValue, setBaselineValue] = useState('')
   const [obsInstrument, setObsInstrument] = useState('')
   const [obsValue, setObsValue] = useState('')
+  const [baselineOtherId, setBaselineOtherId] = useState('')
+  const [baselineEditValue, setBaselineEditValue] = useState('')
   const [transferEdges, setTransferEdges] = useState(false)
   const [labelError, setLabelError] = useState<string | null>(null)
   const [transferBlocked, setTransferBlocked] = useState<string | null>(null)
@@ -123,6 +125,15 @@ export function StationsPanel({ area, onCreateSurvey, onAddTarget, onAddInstrume
 
   const selectedTarget = survey.targets.find((t) => t.id === selectedId)
   const selectedInstrument = survey.instrumentPositions.find((p) => p.id === selectedId)
+
+  const submitBaselineEdit = () => {
+    if (!selectedInstrument || !baselineOtherId) return
+    const v = Number(baselineEditValue.replace(',', '.'))
+    if (!Number.isFinite(v) || v <= 0) return
+    beforeMutate()
+    onAddBaseline(survey.id, selectedInstrument.id, baselineOtherId, v)
+    setBaselineEditValue('')
+  }
 
   const submitObservation = () => {
     if (!selectedTarget || !obsInstrument) return
@@ -267,6 +278,26 @@ export function StationsPanel({ area, onCreateSurvey, onAddTarget, onAddInstrume
         <div className="bottom-sheet">
           <div className="bottom-sheet-head"><h3>{selectedInstrument.label}</h3><button className="secondary" onClick={() => setSelectedId(null)}>Zamknij</button></div>
           <div className="wall-info-row"><span>Pozycja rozwiązana</span><strong>{resolvedInstruments.get(selectedInstrument.id) ? `${Math.round(resolvedInstruments.get(selectedInstrument.id)!.x)}, ${Math.round(resolvedInstruments.get(selectedInstrument.id)!.y)} mm` : 'brak bazy'}</strong></div>
+          {survey.instrumentPositions.length > 1 && (
+            <>
+              <div className="session-list">
+                {survey.instrumentPositions.filter((p) => p.id !== selectedInstrument.id).map((p) => {
+                  const dist = baselineBetween(survey, selectedInstrument.id, p.id)
+                  return <div className="session-row" key={p.id}><span>{p.label}</span><span>{dist ? `${dist} mm` : '—'}</span></div>
+                })}
+              </div>
+              <div className="wall-edit">
+                <label>Baza do pozycji
+                  <select value={baselineOtherId} onChange={(e) => setBaselineOtherId(e.target.value)}>
+                    <option value="">wybierz…</option>
+                    {survey.instrumentPositions.filter((p) => p.id !== selectedInstrument.id).map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+                  </select>
+                </label>
+                <label>Odległość [mm]<input value={baselineEditValue} onChange={(e) => setBaselineEditValue(e.target.value)} inputMode="decimal" /></label>
+                <button className="primary wide" onClick={submitBaselineEdit}>Zapisz bazę</button>
+              </div>
+            </>
+          )}
           <button className="secondary wide" onClick={deleteSelected}>Usuń pozycję</button>
         </div>
       )}

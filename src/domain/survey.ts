@@ -6,6 +6,12 @@ export const RESIDUAL_WARN_MM = 50
 
 export type ResolvedInstruments = Map<string, { x: number; y: number; z: number }>
 
+/** Zwraca zapisaną bazę między dwiema pozycjami dalmierza niezależnie od kierunku zapisu. */
+export function baselineBetween(survey: StationSurvey, aId: string, bId: string): number | undefined {
+  const b = survey.baselines.find((x) => (x.fromInstrumentId === aId && x.toInstrumentId === bId) || (x.fromInstrumentId === bId && x.toInstrumentId === aId))
+  return b?.distanceMm
+}
+
 /** D1 = poczatek lokalnego ukladu; kolejne pozycje wyliczane z baseline + kierunku ze szkicu. */
 export function resolveInstrumentPositions(survey: StationSurvey): ResolvedInstruments {
   const resolved: ResolvedInstruments = new Map()
@@ -94,6 +100,15 @@ export function resolvedPointOf(r: TargetResolution): Vec2 | null {
 export type TransferItem = { targetId: string; label: string; position: { x: number; y: number; z: number }; reuseAreaPointId?: string }
 export type TransferPlan = { ok: true; items: TransferItem[]; conflicts: string[] } | { ok: false; reason: string }
 
+function p0BlockReason(kind: TargetResolution['kind']): string {
+  switch (kind) {
+    case 'none': return 'Nie można ustawić początku układu — brak odczytów odległości do P0 (potrzebne co najmniej dwa, z różnych pozycji dalmierza).'
+    case 'insufficient': return 'Nie można ustawić początku układu — do P0 jest tylko jeden odczyt. Dodaj odczyt z drugiej pozycji dalmierza i sprawdź, czy zapisana jest baza między pozycjami.'
+    case 'ambiguous': return 'Nie można ustawić początku układu — P0 ma dwa możliwe rozwiązania (niejednoznaczne). Dodaj trzeci odczyt albo popraw szkic.'
+    default: return 'Nie można jeszcze ustawić początku układu — P0 nie jest jeszcze rozwiązany.'
+  }
+}
+
 /**
  * Przelicza rozwiazane punkty wzgledem P0 (P0 staje sie (0,0)) przed przeniesieniem na Rzut.
  * P0 zawsze laczy sie z istniejacym punktem P0 na Rzucie (nigdy nie tworzy drugiego).
@@ -101,8 +116,10 @@ export type TransferPlan = { ok: true; items: TransferItem[]; conflicts: string[
  */
 export function planTransfer(area: Area, survey: StationSurvey, resolutions: Map<string, TargetResolution>): TransferPlan {
   const p0Target = survey.targets.find((t) => labelOf(t) === 'P0')
-  const p0Point = p0Target ? resolvedPointOf(resolutions.get(p0Target.id) ?? { kind: 'none' }) : null
-  if (!p0Target || !p0Point) return { ok: false, reason: 'Nie można jeszcze ustawić początku układu. Brakuje pomiaru P0 z D2.' }
+  if (!p0Target) return { ok: false, reason: 'Szkic nie ma jeszcze punktu P0 — dodaj punkt, który będzie początkiem układu.' }
+  const p0Resolution = resolutions.get(p0Target.id) ?? { kind: 'none' }
+  const p0Point = resolvedPointOf(p0Resolution)
+  if (!p0Point) return { ok: false, reason: p0BlockReason(p0Resolution.kind) }
 
   const items: TransferItem[] = []
   const conflicts: string[] = []

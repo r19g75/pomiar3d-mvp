@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { planTransfer, resolveInstrumentPositions, resolveTarget, targetStatus, type TargetResolution } from './survey'
+import { baselineBetween, planTransfer, resolveInstrumentPositions, resolveTarget, targetStatus, type TargetResolution } from './survey'
 import type { Area, Point3D, StationSurvey } from './model'
 
 function makeSurvey(overrides: Partial<StationSurvey> = {}): StationSurvey {
@@ -34,6 +34,35 @@ describe('resolveInstrumentPositions', () => {
     expect(resolved.get('D1')).toEqual({ x: 0, y: 0, z: 0 })
     expect(resolved.get('D2')!.x).toBeCloseTo(3000, 3)
     expect(resolved.get('D2')!.y).toBeCloseTo(0, 3)
+  })
+})
+
+describe('numeracja stanowisk z lukami (pkt: D0/D2 bez D1)', () => {
+  it('rozwiazuje trylateracje gdy istnieja tylko D0 i D2 (D1 usuniety/nie istnieje)', () => {
+    const survey = makeSurvey({
+      instrumentPositions: [
+        { id: 'inst-a', label: 'D0', sketch: { x: 0, y: 0 } },
+        { id: 'inst-b', label: 'D2', sketch: { x: 1, y: 0 } }
+      ],
+      baselines: [{ fromInstrumentId: 'inst-a', toInstrumentId: 'inst-b', distanceMm: 3000 }],
+      targets: [{ id: 'pt-0', label: 'P0', sketch: { x: 0.3, y: 1 }, order: 0 }],
+      observations: [
+        { id: 'o1', instrumentPositionId: 'inst-a', targetId: 'pt-0', distanceMm: 1803, source: 'manual' as const, createdAt: '' },
+        { id: 'o2', instrumentPositionId: 'inst-b', targetId: 'pt-0', distanceMm: 2500, source: 'manual' as const, createdAt: '' }
+      ]
+    })
+    const resolved = resolveInstrumentPositions(survey)
+    expect(resolved.get('inst-a')).toEqual({ x: 0, y: 0, z: 0 })
+    expect(resolved.get('inst-b')!.x).toBeCloseTo(3000, 3)
+    const result = resolveTarget(survey.targets[0], survey, resolved)
+    expect(result.kind).toBe('sketch-picked')
+  })
+
+  it('baselineBetween znajduje baze niezaleznie od kierunku zapisu', () => {
+    const survey = makeSurvey({ baselines: [{ fromInstrumentId: 'inst-b', toInstrumentId: 'inst-a', distanceMm: 3000 }] })
+    expect(baselineBetween(survey, 'inst-a', 'inst-b')).toBe(3000)
+    expect(baselineBetween(survey, 'inst-b', 'inst-a')).toBe(3000)
+    expect(baselineBetween(survey, 'inst-a', 'inst-c')).toBeUndefined()
   })
 })
 

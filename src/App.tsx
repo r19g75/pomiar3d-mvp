@@ -278,8 +278,16 @@ export default function App() {
   }
 
   const addSurveyBaseline = (surveyId: string, fromInstrumentId: string, toInstrumentId: string, distanceMm: number) => {
-    updateSurvey(surveyId, (s) => ({ ...s, baselines: [...s.baselines.filter((b) => !(b.fromInstrumentId === fromInstrumentId && b.toInstrumentId === toInstrumentId)), { fromInstrumentId, toInstrumentId, distanceMm }] }),
-      () => ({ summary: `Baza ${fromInstrumentId}-${toInstrumentId} = ${distanceMm} mm` }))
+    updateSurvey(surveyId, (s) => {
+      const isSamePair = (b: { fromInstrumentId: string; toInstrumentId: string }) =>
+        (b.fromInstrumentId === fromInstrumentId && b.toInstrumentId === toInstrumentId) ||
+        (b.fromInstrumentId === toInstrumentId && b.toInstrumentId === fromInstrumentId)
+      return { ...s, baselines: [...s.baselines.filter((b) => !isSamePair(b)), { fromInstrumentId, toInstrumentId, distanceMm }] }
+    }, (s) => {
+      const fromLabel = s.instrumentPositions.find((p) => p.id === fromInstrumentId)?.label ?? fromInstrumentId
+      const toLabel = s.instrumentPositions.find((p) => p.id === toInstrumentId)?.label ?? toInstrumentId
+      return { summary: `Baza ${fromLabel}-${toLabel} = ${distanceMm} mm` }
+    })
   }
 
   const addSurveyObservation = (surveyId: string, instrumentPositionId: string, targetId: string, distanceMm: number) => {
