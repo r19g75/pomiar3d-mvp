@@ -80,6 +80,23 @@ describe('resolveTarget', () => {
     }
   })
 
+  it('dwa odczyty + szkic po ujemnej stronie wybiera przeciwnego kandydata (pkt 3/E, obie strony bazy D1-D2)', () => {
+    const target = { id: 'P1', label: 'P1', sketch: { x: 0.33, y: -1 }, order: 0 } // szkicowo "pod" D1-D2
+    const survey = {
+      ...baseSurvey,
+      observations: [
+        { id: 'o1', instrumentPositionId: 'D1', targetId: 'P1', distanceMm: 1803, source: 'manual' as const, createdAt: '' },
+        { id: 'o2', instrumentPositionId: 'D2', targetId: 'P1', distanceMm: 2500, source: 'manual' as const, createdAt: '' }
+      ]
+    }
+    const result = resolveTarget(target, survey, resolved)
+    expect(result.kind).toBe('sketch-picked')
+    if (result.kind === 'sketch-picked') {
+      expect(result.point.y).toBeLessThan(0)
+      expect(result.point.x).toBeCloseTo(1000, 0)
+    }
+  })
+
   it('trzeci odczyt rozstrzyga ostatecznie i liczy residuum', () => {
     const target = { id: 'P1', label: 'P1', sketch: { x: 0.33, y: 1 }, order: 0 }
     const survey = {

@@ -36,7 +36,8 @@ export function SketchCanvas({ nodes, edges, selectedId, addMode, onAddNode, onS
   const dragId = useRef<string | null>(null)
   const [, forceRender] = useState(0)
 
-  const toSvgPoint = (clientX: number, clientY: number) => {
+  /** Ekran (SVG, Y w dół) -> model (klasyczny układ, +Y w górę). */
+  const toModelPoint = (clientX: number, clientY: number) => {
     const svg = svgRef.current
     if (!svg) return { x: 0, y: 0 }
     const ctm = svg.getScreenCTM()
@@ -44,12 +45,15 @@ export function SketchCanvas({ nodes, edges, selectedId, addMode, onAddNode, onS
     const pt = svg.createSVGPoint()
     pt.x = clientX; pt.y = clientY
     const p = pt.matrixTransform(ctm.inverse())
-    return { x: p.x, y: p.y }
+    return { x: p.x, y: -p.y }
   }
+
+  /** Model (+Y w górę) -> SVG do rysowania (Y w dół). */
+  const sy = (y: number) => -y
 
   const handleCanvasClick = (e: React.MouseEvent<SVGSVGElement>) => {
     if (!addMode) return
-    const p = toSvgPoint(e.clientX, e.clientY)
+    const p = toModelPoint(e.clientX, e.clientY)
     onAddNode(Math.round(p.x), Math.round(p.y))
   }
 
@@ -63,7 +67,7 @@ export function SketchCanvas({ nodes, edges, selectedId, addMode, onAddNode, onS
 
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!dragId.current) return
-    const p = toSvgPoint(e.clientX, e.clientY)
+    const p = toModelPoint(e.clientX, e.clientY)
     onMoveNode(dragId.current, Math.round(p.x), Math.round(p.y))
     forceRender((n) => n + 1)
   }
@@ -88,17 +92,17 @@ export function SketchCanvas({ nodes, edges, selectedId, addMode, onAddNode, onS
         {edges.map((edge, i) => {
           const a = byId.get(edge.from); const b = byId.get(edge.to)
           if (!a || !b) return null
-          return <line key={i} className="sketch-edge" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
+          return <line key={i} className="sketch-edge" x1={a.x} y1={sy(a.y)} x2={b.x} y2={sy(b.y)} />
         })}
         {nodes.map((n) => (
           <g key={n.id} className="sketch-node-group" onPointerDown={startDrag(n.id)}>
-            <circle className="sketch-node-hit" cx={n.x} cy={n.y} r="70" />
+            <circle className="sketch-node-hit" cx={n.x} cy={sy(n.y)} r="70" />
             {n.kind === 'target' ? (
-              <circle className={`sketch-node ${STATUS_CLASS[n.status ?? 'none']} ${n.id === selectedId ? 'selected' : ''}`} cx={n.x} cy={n.y} r="26" />
+              <circle className={`sketch-node ${STATUS_CLASS[n.status ?? 'none']} ${n.id === selectedId ? 'selected' : ''}`} cx={n.x} cy={sy(n.y)} r="26" />
             ) : (
-              <rect className={`sketch-node sketch-instrument ${n.id === selectedId ? 'selected' : ''}`} x={n.x - 24} y={n.y - 24} width="48" height="48" />
+              <rect className={`sketch-node sketch-instrument ${n.id === selectedId ? 'selected' : ''}`} x={n.x - 24} y={sy(n.y) - 24} width="48" height="48" />
             )}
-            <text x={n.x + 36} y={n.y - 36} className="svg-label sketch-label">{n.label}</text>
+            <text x={n.x + 36} y={sy(n.y) - 36} className="svg-label sketch-label">{n.label}</text>
           </g>
         ))}
       </svg>
