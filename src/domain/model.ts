@@ -43,17 +43,39 @@ export type Shape = {
   note?: string
 }
 
-export type SurveyStation = {
+export type SketchPos = { x: number; y: number }
+
+/** Punkt charakterystyczny szkicu (P1, P2...) - nie jest jeszcze Area.points, dopóki nie przeniesiony na Rzut. */
+export type SurveyTarget = {
   id: Id
-  label?: string
-  position: Vec3
-  source: 'manual' | 'derived'
+  label: string
+  sketch: SketchPos
+  order: number
+  kind?: 'corner' | 'opening-edge' | 'chimney' | 'other'
+  note?: string
+  linkedPointId?: Id
+  resolved?: { x: number; y: number; z?: number; method: 'two-station' | 'multi-station'; residualMm?: number }
+}
+
+/** Pozycja dalmierza (D1, D2...) - bez wymaganych XYZ, tylko orientacyjny szkic + rozwiązanie z bazy. */
+export type SurveyInstrumentPosition = {
+  id: Id
+  label: string
+  sketch: SketchPos
+  resolved?: { x: number; y: number; z: number }
+}
+
+/** Zmierzona baza między dwiema pozycjami dalmierza (rzeczywisty pomiar, nie założenie). */
+export type SurveyBaseline = {
+  fromInstrumentId: Id
+  toInstrumentId: Id
+  distanceMm: number
 }
 
 export type StationObservation = {
   id: Id
-  stationId: Id
-  targetPointId: Id
+  instrumentPositionId: Id
+  targetId: Id
   distanceMm: number
   source: 'manual' | 'voice' | 'bluetooth'
   createdAt: string
@@ -64,10 +86,11 @@ export type StationSurvey = {
   id: Id
   name: string
   plane: 'xy' | 'xz' | 'yz'
-  stationIds: Id[]
-  targetOrder: Id[]
+  targets: SurveyTarget[]
+  instrumentPositions: SurveyInstrumentPosition[]
+  baselines: SurveyBaseline[]
   observations: StationObservation[]
-  closedOutline?: boolean
+  sketchEdges: { from: Id; to: Id }[]
 }
 
 export type SectionPoint = {
@@ -136,7 +159,6 @@ export type Area = {
   measurements: Measurement[]
   sessions: MeasurementSession[]
   history: HistoryEntry[]
-  stations?: SurveyStation[]
   stationSurveys?: StationSurvey[]
 }
 

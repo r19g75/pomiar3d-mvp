@@ -14,7 +14,7 @@ function migrateLegacy(p: LegacyProject): Project {
     id: newId('A'), name: p.name || 'Obszar po imporcie', kind: 'room', createdAt, updatedAt: p.updatedAt || createdAt,
     activePointId: p.activePointId, activeSessionId: sessionId,
     points: p.points ?? [], walls: p.walls ?? [], shapes: [], sections: p.sections ?? [],
-    stations: [], stationSurveys: [],
+    stationSurveys: [],
     measurements: (p.measurements ?? []).map((m) => ({ ...m, sessionId: m.sessionId ?? sessionId })),
     sessions: [{ id: sessionId, name: 'Import starego projektu', startedAt: createdAt }],
     history: [{ id: newId('H'), createdAt: nowIso(), sessionId, action: 'imported', entityType: 'project', summary: 'Zaimportowano starszy płaski format Pomiar 3D' }]
