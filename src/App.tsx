@@ -14,7 +14,7 @@ import { executeCommand } from './commands/parser'
 import { downloadProject, readProjectFile } from './io/projectFile'
 import { loadProject, saveProject } from './storage/db'
 import { areaMissingCount, movePointForLength, pointMap, wallLength } from './domain/geometry'
-import { addHistory, withArea } from './domain/operations'
+import { addHistory, removeArea, setAreaArchived, withArea } from './domain/operations'
 import { makeDemoProject, makeEmptyArea, newId, nextElementId, nowIso, type Area, type AreaKind, type ElementState, type Project, type StationSurvey } from './domain/model'
 import { checkPointIntegrity, renamePointLabel, repairDuplicateLabels, setPointAsOrigin } from './domain/integrity'
 import type { TransferItem } from './domain/survey'
@@ -89,6 +89,19 @@ export default function App() {
   const updateArea = (updater: (area: Area) => Area) => {
     if (!area) return
     setProject((p) => withArea(p, area.id, updater))
+  }
+
+  const archiveArea = (areaId: string, archived: boolean) => {
+    setProject((p) => setAreaArchived(p, areaId, archived))
+    if (archived && screen === 'area' && area?.id === areaId) setScreen('overview')
+  }
+
+  const deleteAreaPermanently = (areaId: string) => {
+    const target = project.areas.find((a) => a.id === areaId)
+    if (!target) return
+    if (!window.confirm(`Trwale usunąć obszar „${target.name}”? Tej operacji nie można cofnąć.`)) return
+    setProject((p) => removeArea(p, areaId))
+    if (screen === 'area' && area?.id === areaId) setScreen('overview')
   }
 
   const addArea = () => {
@@ -417,7 +430,7 @@ export default function App() {
       </header>
 
       {screen === 'overview' ? (
-        <main><ProjectOverview project={project} onOpen={openArea} onCreate={addArea} /></main>
+        <main><ProjectOverview project={project} onOpen={openArea} onCreate={addArea} onArchive={archiveArea} onDelete={deleteAreaPermanently} /></main>
       ) : area ? (
         <>
           <nav>

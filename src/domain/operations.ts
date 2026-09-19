@@ -30,3 +30,15 @@ export function historyEntry(area: Area, data: Omit<HistoryEntry, 'id' | 'create
 export function addHistory(area: Area, entry: Omit<HistoryEntry, 'id' | 'createdAt' | 'sessionId'> & { sessionId?: string }): Area {
   return { ...area, history: [...area.history, historyEntry(area, entry)] }
 }
+
+export function setAreaArchived(project: Project, areaId: string, archived: boolean): Project {
+  const now = nowIso()
+  return { ...project, updatedAt: now, areas: project.areas.map((a) => a.id === areaId ? { ...a, archived, updatedAt: now } : a) }
+}
+
+/** Trwale usuwa obszar i wszystkie jego dane; nie rusza pozostałych obszarów projektu. */
+export function removeArea(project: Project, areaId: string): Project {
+  const areas = project.areas.filter((a) => a.id !== areaId)
+  const activeAreaId = project.activeAreaId === areaId ? areas[0]?.id : project.activeAreaId
+  return { ...project, areas, activeAreaId, updatedAt: nowIso() }
+}

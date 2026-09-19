@@ -38,13 +38,20 @@ main { padding: 12px; }
 .overview-head h2 { margin: 3px 0 5px; }
 .overview-head p { margin: 0; color: #94a3b8; }
 .area-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
-.area-card { text-align: left; background: #131b2c; border: 1px solid #263142; border-radius: 14px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.area-card { position: relative; background: #131b2c; border: 1px solid #263142; border-radius: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
 .area-card:hover { border-color: #3b82f6; }
+.area-card.archived { opacity: .6; }
+.area-card-body { display: block; width: 100%; text-align: left; background: transparent; padding: 16px; border-radius: inherit; }
+.area-card-menu { position: absolute; top: 6px; right: 6px; z-index: 2; padding: 4px 10px; background: transparent; }
+.area-card-dropdown { position: absolute; top: 32px; right: 6px; z-index: 3; background: #1f2937; border: 1px solid #374151; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; min-width: 160px; box-shadow: 0 4px 12px rgba(0,0,0,.4); }
+.area-card-dropdown button { border-radius: 0; text-align: left; background: transparent; }
+.area-card-dropdown button:hover { background: #374151; }
 .area-card h3 { font-size: 19px; margin: 12px 0 10px; color: #e5e7eb; }
 .area-card-top, .area-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .area-kind { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #94a3b8; }
 .area-meta { margin-top: 9px; font-size: 12px; color: #94a3b8; }
 .area-card small { display: block; margin-top: 10px; color: #94a3b8; line-height: 1.35; }
+.archived-toggle { display: inline-flex; align-items: center; gap: 6px; margin: 12px 0; color: #94a3b8; font-size: 13px; }
 .progress { height: 8px; border-radius: 99px; overflow: hidden; background: #263142; }
 .progress span { display: block; height: 100%; background: #3b82f6; border-radius: inherit; }
 .drawing-card, .check-card, .list-card, .empty-card { background: #131b2c; border-radius: 14px; border: 1px solid #263142; box-shadow: 0 1px 3px rgba(0,0,0,.3); overflow: hidden; }

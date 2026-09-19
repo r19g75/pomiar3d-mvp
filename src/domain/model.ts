@@ -152,6 +152,7 @@ export type Area = {
   updatedAt: string
   activePointId?: Id
   activeSessionId?: Id
+  archived?: boolean
   points: Point3D[]
   walls: Wall[]
   shapes: Shape[]
@@ -160,6 +161,10 @@ export type Area = {
   sessions: MeasurementSession[]
   history: HistoryEntry[]
   stationSurveys?: StationSurvey[]
+}
+
+export function isArchived(area: Area): boolean {
+  return area.archived ?? false
 }
 
 export type Project = {
