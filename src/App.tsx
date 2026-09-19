@@ -16,6 +16,8 @@ import { loadProject, saveProject } from './storage/db'
 import { areaMissingCount, movePointForLength, pointMap, wallLength } from './domain/geometry'
 import { addHistory, withArea } from './domain/operations'
 import { makeDemoProject, makeEmptyArea, newId, nextElementId, nowIso, type Area, type AreaKind, type ElementState, type Project, type StationSurvey } from './domain/model'
+import { checkPointIntegrity, renamePointLabel, repairDuplicateLabels, setPointAsOrigin } from './domain/integrity'
+import type { TransferItem } from './domain/survey'
 import './styles.css'
 
 const WALL_STATE_LABEL: Record<ElementState, string> = { existing: 'istniejąca', reconstructed: 'odtworzona', proposed: 'projektowana' }
@@ -39,7 +41,13 @@ export default function App() {
 
   useEffect(() => {
     loadProject().then((saved) => {
-      if (saved) setProject(saved)
+      if (saved) {
+        setProject(saved)
+        for (const a of saved.areas) {
+          const issues = checkPointIntegrity(a)
+          if (issues.length) console.warn(`Integralność „${a.name}”:`, issues)
+        }
+      }
       setReady(true)
     })
   }, [])
@@ -196,6 +204,22 @@ export default function App() {
     })
   }
 
+  const renamePoint = (pointId: string, newLabel: string): string | undefined => {
+    if (!area) return undefined
+    const result = renamePointLabel(area, pointId, newLabel)
+    if ('error' in result) return result.error
+    setProject((p) => withArea(p, area.id, () => addHistory(result, { action: 'updated', entityType: 'point', entityId: pointId, summary: `Zmieniono etykietę punktu na ${newLabel}` })))
+    return undefined
+  }
+
+  const setPointOrigin = (pointId: string) => {
+    updateArea((a) => addHistory(setPointAsOrigin(a, pointId), { action: 'updated', entityType: 'point', entityId: pointId, summary: `Ustawiono ${pointId} jako P0` }))
+  }
+
+  const repairAreaLabels = () => {
+    updateArea((a) => addHistory(repairDuplicateLabels(a), { action: 'updated', entityType: 'point', summary: 'Naprawiono zduplikowane etykiety punktów' }))
+  }
+
   const updateSurvey = (surveyId: string, fn: (s: StationSurvey) => StationSurvey, historyEntry?: (s: StationSurvey) => { summary: string }) => {
     updateArea((a) => {
       const surveys = a.stationSurveys ?? []
@@ -258,23 +282,46 @@ export default function App() {
     updateSurvey(surveyId, () => snapshot)
   }
 
-  const transferSurveyTargets = (surveyId: string, targetIds: string[], resolvedById: Map<string, { x: number; y: number; z: number }>, withEdges: boolean) => {
+  const renameSurveyTargetLabel = (surveyId: string, targetId: string, newLabel: string): string | undefined => {
+    const survey = area?.stationSurveys?.find((s) => s.id === surveyId)
+    const target = survey?.targets.find((t) => t.id === targetId)
+    if (!survey || !target || target.label === newLabel) return undefined
+    if (survey.targets.some((t) => t.id !== targetId && t.label === newLabel)) return `Punkt ${newLabel} już istnieje.`
+    updateSurvey(surveyId, (s) => ({ ...s, targets: s.targets.map((t) => t.id === targetId ? { ...t, label: newLabel } : t) }),
+      () => ({ summary: `Zmieniono etykietę punktu szkicu na ${newLabel}` }))
+    return undefined
+  }
+
+  const setSurveyTargetOrigin = (surveyId: string, targetId: string) => {
+    updateSurvey(surveyId, (s) => {
+      const target = s.targets.find((t) => t.id === targetId)
+      if (!target || target.label === 'P0') return s
+      const currentP0 = s.targets.find((t) => t.label === 'P0')
+      const oldLabel = target.label
+      return {
+        ...s, targets: s.targets.map((t) => {
+          if (t.id === targetId) return { ...t, label: 'P0' }
+          if (currentP0 && t.id === currentP0.id) return { ...t, label: oldLabel }
+          return t
+        })
+      }
+    }, () => ({ summary: `Ustawiono ${targetId} jako P0 w szkicu` }))
+  }
+
+  const transferSurveyTargets = (surveyId: string, items: TransferItem[], withEdges: boolean) => {
     updateArea((a) => {
       const surveys = a.stationSurveys ?? []
       const survey = surveys.find((s) => s.id === surveyId)
       if (!survey) return a
       let points = a.points
       const idMap = new Map<string, string>() // targetId -> areaPointId
-      const targetsToTransfer = survey.targets.filter((t) => targetIds.includes(t.id))
-      for (const t of targetsToTransfer) {
-        const pos = resolvedById.get(t.id)
-        if (!pos) continue
-        const pointId = t.linkedPointId ?? nextElementId(points.map((p) => p.id), 'P')
-        idMap.set(t.id, pointId)
+      for (const item of items) {
+        const pointId = item.reuseAreaPointId ?? nextElementId(points.map((p) => p.id), 'P')
+        idMap.set(item.targetId, pointId)
         const exists = points.some((p) => p.id === pointId)
         points = exists
-          ? points.map((p) => p.id === pointId ? { ...p, position: pos, source: 'derived' as const } : p)
-          : [...points, { id: pointId, position: pos, source: 'derived' as const, state: 'existing' as const }]
+          ? points.map((p) => p.id === pointId ? { ...p, position: item.position, label: item.label, source: 'derived' as const } : p)
+          : [...points, { id: pointId, label: item.label, position: item.position, source: 'derived' as const, state: 'existing' as const }]
       }
       let walls = a.walls
       if (withEdges) {
@@ -289,8 +336,8 @@ export default function App() {
       }
       const stationSurveys = surveys.map((s) => s.id !== surveyId ? s : ({ ...s, targets: s.targets.map((t) => idMap.has(t.id) ? { ...t, linkedPointId: idMap.get(t.id) } : t) }))
       return addHistory({ ...a, points, walls, stationSurveys }, {
-        action: 'created', entityType: 'point', entityId: targetsToTransfer[0]?.id ?? surveyId,
-        summary: `Przeniesiono na Rzut: ${targetsToTransfer.map((t) => t.label).join(', ')}`
+        action: 'created', entityType: 'point', entityId: items[0]?.targetId ?? surveyId,
+        summary: `Przeniesiono na Rzut: ${items.map((i) => i.label).join(', ')}`
       })
     })
   }
@@ -425,6 +472,8 @@ export default function App() {
                   startInEdit={wallEditMode}
                   onClose={() => setSelectedPointId(undefined)}
                   onSave={(patch) => savePointFields(selectedPoint.id, patch)}
+                  onRename={(newLabel) => renamePoint(selectedPoint.id, newLabel)}
+                  onSetOrigin={() => setPointOrigin(selectedPoint.id)}
                 />
               )}
               {selectedShape && (
@@ -481,6 +530,9 @@ export default function App() {
                 onAddEdge={addSurveyEdge}
                 onRestoreSurvey={restoreSurvey}
                 onTransferToRzut={transferSurveyTargets}
+                onRepairLabels={repairAreaLabels}
+                onRenameTarget={renameSurveyTargetLabel}
+                onSetTargetOrigin={setSurveyTargetOrigin}
               />
             )}
           </main>

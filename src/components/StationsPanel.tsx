@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import type { Area, StationSurvey } from '../domain/model'
-import { newId } from '../domain/model'
-import { resolveInstrumentPositions, resolveTarget, targetStatus, type TargetResolution } from '../domain/survey'
+import { newId, nextElementId } from '../domain/model'
+import { checkPointIntegrity } from '../domain/integrity'
+import { planTransfer, resolveInstrumentPositions, resolveTarget, targetStatus, type TargetResolution, type TransferItem } from '../domain/survey'
 import { SketchCanvas, type SketchEdge, type SketchNode } from './SketchCanvas'
 
 type AddMode = 'target' | 'instrument' | null
@@ -15,7 +16,7 @@ const RESOLUTION_LABEL: Record<TargetResolution['kind'], string> = {
   resolved3: 'rozstrzygnięte trzecim odczytem'
 }
 
-export function StationsPanel({ area, onCreateSurvey, onAddTarget, onAddInstrument, onMoveNode, onDeleteNode, onAddBaseline, onAddObservation, onAddEdge, onRestoreSurvey, onTransferToRzut }: {
+export function StationsPanel({ area, onCreateSurvey, onAddTarget, onAddInstrument, onMoveNode, onDeleteNode, onAddBaseline, onAddObservation, onAddEdge, onRestoreSurvey, onTransferToRzut, onRepairLabels, onRenameTarget, onSetTargetOrigin }: {
   area: Area
   onCreateSurvey: (name: string) => void
   onAddTarget: (surveyId: string, id: string, label: string, x: number, y: number) => void
@@ -26,7 +27,10 @@ export function StationsPanel({ area, onCreateSurvey, onAddTarget, onAddInstrume
   onAddObservation: (surveyId: string, instrumentPositionId: string, targetId: string, distanceMm: number) => void
   onAddEdge: (surveyId: string, from: string, to: string) => void
   onRestoreSurvey: (surveyId: string, snapshot: StationSurvey) => void
-  onTransferToRzut: (surveyId: string, targetIds: string[], resolvedById: Map<string, { x: number; y: number; z: number }>, withEdges: boolean) => void
+  onTransferToRzut: (surveyId: string, items: TransferItem[], withEdges: boolean) => void
+  onRepairLabels: () => void
+  onRenameTarget: (surveyId: string, targetId: string, newLabel: string) => string | undefined
+  onSetTargetOrigin: (surveyId: string, targetId: string) => void
 }) {
   const surveys = area.stationSurveys ?? []
   const survey = surveys[surveys.length - 1]
@@ -42,6 +46,11 @@ export function StationsPanel({ area, onCreateSurvey, onAddTarget, onAddInstrume
   const [obsInstrument, setObsInstrument] = useState('')
   const [obsValue, setObsValue] = useState('')
   const [transferEdges, setTransferEdges] = useState(false)
+  const [labelError, setLabelError] = useState<string | null>(null)
+  const [transferBlocked, setTransferBlocked] = useState<string | null>(null)
+  const [transferSkipped, setTransferSkipped] = useState<string[] | null>(null)
+
+  const integrityIssues = useMemo(() => checkPointIntegrity(area), [area])
 
   const resolvedInstruments = useMemo(() => survey ? resolveInstrumentPositions(survey) : new Map(), [survey])
   const resolutions = useMemo(() => {
@@ -70,11 +79,11 @@ export function StationsPanel({ area, onCreateSurvey, onAddTarget, onAddInstrume
   const handleAddNode = (x: number, y: number) => {
     if (addMode === 'target') {
       const id = newId('SPT')
-      onAddTarget(survey.id, id, `P${survey.targets.length + 1}`, x, y)
+      onAddTarget(survey.id, id, nextElementId(survey.targets.map((t) => t.label), 'P'), x, y)
     } else if (addMode === 'instrument') {
       const id = newId('SDI')
       const prev = survey.instrumentPositions[survey.instrumentPositions.length - 1]
-      onAddInstrument(survey.id, id, `D${survey.instrumentPositions.length + 1}`, x, y)
+      onAddInstrument(survey.id, id, nextElementId(survey.instrumentPositions.map((p) => p.label), 'D'), x, y)
       if (prev) { setPendingBaselineTo(id); setBaselineValue('') }
     }
     setAddMode(null)
@@ -164,6 +173,14 @@ export function StationsPanel({ area, onCreateSurvey, onAddTarget, onAddInstrume
       <div className="card-title"><h2>Stanowiska — {survey.name}</h2><span>{doneCount}/{survey.targets.length} punktów gotowych</span></div>
       <p className="muted"><small>Szkic orientacyjny — proporcje nie muszą być dokładne. Stanowisko/pozycja dalmierza oznacza jego punkt odniesienia; przy obrocie powinien pozostawać możliwie stały.</small></p>
 
+      {integrityIssues.length > 0 && (
+        <div className="wall-edit warn-card">
+          <strong>Problemy z etykietami punktów na Rzucie:</strong>
+          {integrityIssues.map((i, idx) => <div key={idx}>{i.message}</div>)}
+          <button className="secondary wide" onClick={onRepairLabels}>Napraw etykiety punktów</button>
+        </div>
+      )}
+
       <div className="section-tabs">
         <button className={view === 'sketch' ? 'active' : ''} onClick={() => setView('sketch')}>Szkic</button>
         <button className={view === 'result' ? 'active' : ''} onClick={() => setView('result')}>Wynik</button>
@@ -198,6 +215,22 @@ export function StationsPanel({ area, onCreateSurvey, onAddTarget, onAddInstrume
       {selectedTarget && (
         <div className="check-card">
           <div className="card-title"><h3>{selectedTarget.label}</h3><span>{RESOLUTION_LABEL[(resolutions.get(selectedTarget.id) ?? { kind: 'none' }).kind]}</span></div>
+          <div className="wall-edit">
+            <label>Etykieta
+              <input
+                key={selectedTarget.id}
+                defaultValue={selectedTarget.label}
+                onChange={() => setLabelError(null)}
+                onBlur={(e) => {
+                  if (e.target.value === selectedTarget.label) return
+                  const err = onRenameTarget(survey.id, selectedTarget.id, e.target.value)
+                  setLabelError(err ?? null)
+                }}
+              />
+            </label>
+            {labelError && <div className="error-text">{labelError}</div>}
+            {selectedTarget.label !== 'P0' && <button className="secondary wide" onClick={() => onSetTargetOrigin(survey.id, selectedTarget.id)}>Ustaw jako P0</button>}
+          </div>
           {survey.instrumentPositions.length === 0 && <p className="muted">Dodaj najpierw pozycję dalmierza.</p>}
           <div className="session-list">
             {survey.instrumentPositions.map((p) => {
@@ -234,16 +267,17 @@ export function StationsPanel({ area, onCreateSurvey, onAddTarget, onAddInstrume
 
       <div className="wall-edit">
         <label><input type="checkbox" checked={transferEdges} onChange={(e) => setTransferEdges(e.target.checked)} /> też jako odcinki (niekompletne ściany)</label>
+        {transferBlocked && <div className="error-text">{transferBlocked}</div>}
+        {transferSkipped && transferSkipped.length > 0 && <div className="error-text">Pominięto (kolizja etykiety): {transferSkipped.join(', ')}</div>}
         <button
           className="primary wide"
           disabled={doneCount === 0}
           onClick={() => {
-            const resolvedById = new Map<string, { x: number; y: number; z: number }>()
-            for (const t of survey.targets) {
-              const r = resolutions.get(t.id)
-              if (r && (r.kind === 'unique' || r.kind === 'sketch-picked' || r.kind === 'resolved3')) resolvedById.set(t.id, { x: r.point.x, y: r.point.y, z: 0 })
-            }
-            onTransferToRzut(survey.id, Array.from(resolvedById.keys()), resolvedById, transferEdges)
+            const plan = planTransfer(area, survey, resolutions)
+            if (!plan.ok) { setTransferBlocked(plan.reason); setTransferSkipped(null); return }
+            setTransferBlocked(null)
+            setTransferSkipped(plan.conflicts.length ? plan.conflicts : null)
+            if (plan.items.length) onTransferToRzut(survey.id, plan.items, transferEdges)
           }}
         >Przenieś rozwiązane punkty na Rzut</button>
       </div>

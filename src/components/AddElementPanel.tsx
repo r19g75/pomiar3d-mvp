@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Area } from '../domain/model'
-import { nextElementId } from '../domain/model'
+import { labelOf, nextElementId } from '../domain/model'
 
 export type AddType = 'point' | 'wall' | 'rectangle' | 'circle'
 
@@ -78,12 +78,12 @@ export function AddElementPanel({ area, lastType, onTypeChange, onCreatePoint, o
         {lastType === 'wall' && <>
           <label>Od punktu
             <select value={from} onChange={(e) => setFrom(e.target.value)}>
-              {area.points.map((p) => <option key={p.id} value={p.id}>{p.id}</option>)}
+              {area.points.map((p) => <option key={p.id} value={p.id}>{labelOf(p)}</option>)}
             </select>
           </label>
           <label>Do punktu
             <select value={to} onChange={(e) => setTo(e.target.value)}>
-              {area.points.map((p) => <option key={p.id} value={p.id}>{p.id}</option>)}
+              {area.points.map((p) => <option key={p.id} value={p.id}>{labelOf(p)}</option>)}
             </select>
           </label>
           <label>Wysokość [mm]<input value={heightMm} onChange={(e) => setHeightMm(e.target.value)} inputMode="decimal" /></label>

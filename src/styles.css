@@ -24,6 +24,9 @@ button.wide { width: 100%; margin-top: 10px; }
 .badge { font-size: 12px; padding: 7px 9px; border-radius: 999px; font-weight: 700; white-space: nowrap; }
 .badge.warn { background: #4a3510; color: #fbbf24; }
 .badge.ok { background: #0f3d2e; color: #34d399; }
+.error-text { color: #f87171; font-size: 13px; margin-top: 6px; }
+.warn-card { background: #4a3510; border: 1px solid #7c5a17; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+.warn-card div { color: #fbbf24; font-size: 13px; margin: 3px 0; }
 nav { display: flex; overflow-x: auto; background: #0f1626; border-bottom: 1px solid #1f2937; position: sticky; top: 67px; z-index: 9; scrollbar-width: none; }
 nav::-webkit-scrollbar { display: none; }
 nav button { min-width: 105px; flex: 1 0 auto; border-radius: 0; background: #0f1626; color: #94a3b8; padding: 13px 9px; font-size: 13px; border-bottom: 3px solid transparent; }

@@ -1,4 +1,5 @@
-import type { StationSurvey, SurveyInstrumentPosition, SurveyTarget } from './model'
+import type { Area, StationSurvey, SurveyInstrumentPosition, SurveyTarget } from './model'
+import { labelOf } from './model'
 import { circleIntersections, pickByThirdStation, type Vec2 } from './trilateration'
 
 export const RESIDUAL_WARN_MM = 50
@@ -81,6 +82,41 @@ export function resolveTarget(target: SurveyTarget, survey: StationSurvey, resol
   }
 
   return { kind: 'ambiguous', points: [candidates[0], candidates[1]] }
+}
+
+export function resolvedPointOf(r: TargetResolution): Vec2 | null {
+  switch (r.kind) {
+    case 'unique': case 'sketch-picked': case 'resolved3': return r.point
+    default: return null
+  }
+}
+
+export type TransferItem = { targetId: string; label: string; position: { x: number; y: number; z: number }; reuseAreaPointId?: string }
+export type TransferPlan = { ok: true; items: TransferItem[]; conflicts: string[] } | { ok: false; reason: string }
+
+/**
+ * Przelicza rozwiazane punkty wzgledem P0 (P0 staje sie (0,0)) przed przeniesieniem na Rzut.
+ * P0 zawsze laczy sie z istniejacym punktem P0 na Rzucie (nigdy nie tworzy drugiego).
+ * Inne etykiety kolidujace z istniejacym, niepolaczonym punktem sa zglaszane jako konflikt i pomijane.
+ */
+export function planTransfer(area: Area, survey: StationSurvey, resolutions: Map<string, TargetResolution>): TransferPlan {
+  const p0Target = survey.targets.find((t) => labelOf(t) === 'P0')
+  const p0Point = p0Target ? resolvedPointOf(resolutions.get(p0Target.id) ?? { kind: 'none' }) : null
+  if (!p0Target || !p0Point) return { ok: false, reason: 'Nie można jeszcze ustawić początku układu. Brakuje pomiaru P0 z D2.' }
+
+  const items: TransferItem[] = []
+  const conflicts: string[] = []
+  for (const t of survey.targets) {
+    const point = resolvedPointOf(resolutions.get(t.id) ?? { kind: 'none' })
+    if (!point) continue
+    const label = labelOf(t)
+    const position = { x: point.x - p0Point.x, y: point.y - p0Point.y, z: 0 }
+    const existing = area.points.find((p) => labelOf(p) === label)
+    if (label === 'P0') { items.push({ targetId: t.id, label, position, reuseAreaPointId: t.linkedPointId ?? existing?.id }); continue }
+    if (existing && existing.id !== t.linkedPointId) { conflicts.push(label); continue }
+    items.push({ targetId: t.id, label, position, reuseAreaPointId: t.linkedPointId })
+  }
+  return { ok: true, items, conflicts }
 }
 
 export type TargetStatus = 'none' | 'partial' | 'done' | 'warn'

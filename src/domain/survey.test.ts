@@ -1,12 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import { resolveInstrumentPositions, resolveTarget, targetStatus } from './survey'
-import type { StationSurvey } from './model'
+import { planTransfer, resolveInstrumentPositions, resolveTarget, targetStatus, type TargetResolution } from './survey'
+import type { Area, Point3D, StationSurvey } from './model'
 
 function makeSurvey(overrides: Partial<StationSurvey> = {}): StationSurvey {
   return {
     id: 'SV1', name: 'test', plane: 'xy',
     targets: [], instrumentPositions: [], baselines: [], observations: [], sketchEdges: [],
     ...overrides
+  }
+}
+
+function pt(id: string, label?: string): Point3D {
+  return { id, label, position: { x: 0, y: 0, z: 0 }, source: 'measured', state: 'existing' }
+}
+
+function makeArea(points: Point3D[]): Area {
+  return {
+    id: 'A1', name: 'test', kind: 'room', createdAt: '', updatedAt: '',
+    points, walls: [], shapes: [], sections: [], measurements: [], sessions: [], history: []
   }
 }
 
@@ -102,5 +113,52 @@ describe('resolveTarget', () => {
     const result = resolveTarget(target, survey, resolved)
     expect(result.kind).toBe('sketch-picked')
     if (result.kind === 'sketch-picked') expect(result.point.x).toBeCloseTo(1000, 0)
+  })
+})
+
+describe('planTransfer (pkt 2, 9, F, G)', () => {
+  const survey = makeSurvey({ targets: [{ id: 'tP0', label: 'P0', sketch: { x: 0, y: 0 }, order: 0 }, { id: 'tP1', label: 'P1', sketch: { x: 1, y: 0 }, order: 1 }] })
+  const resolutions = new Map<string, TargetResolution>([
+    ['tP0', { kind: 'unique', point: { x: 1834, y: 1260 } }],
+    ['tP1', { kind: 'unique', point: { x: 4217, y: 1264 } }]
+  ])
+
+  it('F: przelicza wzgledem P0 (P0 -> (0,0))', () => {
+    const plan = planTransfer(makeArea([]), survey, resolutions)
+    expect(plan.ok).toBe(true)
+    if (plan.ok) {
+      const p0 = plan.items.find((i) => i.label === 'P0')!
+      const p1 = plan.items.find((i) => i.label === 'P1')!
+      expect(p0.position.x).toBeCloseTo(0, 6); expect(p0.position.y).toBeCloseTo(0, 6)
+      expect(p1.position.x).toBeCloseTo(2383, 6); expect(p1.position.y).toBeCloseTo(4, 6)
+    }
+  })
+
+  it('brak rozwiazanego P0 -> blokuje transfer z komunikatem', () => {
+    const noP0 = new Map(resolutions); noP0.delete('tP0')
+    const plan = planTransfer(makeArea([]), survey, noP0)
+    expect(plan.ok).toBe(false)
+    if (!plan.ok) expect(plan.reason).toMatch(/P0/)
+  })
+
+  it('G: istniejacy P0 na Rzucie + szkicowy P0 -> laczy sie, nie tworzy drugiego', () => {
+    const area = makeArea([pt('existingP0', 'P0')])
+    const plan = planTransfer(area, survey, resolutions)
+    expect(plan.ok).toBe(true)
+    if (plan.ok) {
+      expect(plan.conflicts).toHaveLength(0)
+      const p0 = plan.items.find((i) => i.label === 'P0')!
+      expect(p0.reuseAreaPointId).toBe('existingP0')
+    }
+  })
+
+  it('kolidujaca etykieta z innym, niepolaczonym punktem -> konflikt, pomijany w transferze', () => {
+    const area = makeArea([pt('existingP1', 'P1')])
+    const plan = planTransfer(area, survey, resolutions)
+    expect(plan.ok).toBe(true)
+    if (plan.ok) {
+      expect(plan.conflicts).toContain('P1')
+      expect(plan.items.some((i) => i.label === 'P1')).toBe(false)
+    }
   })
 })

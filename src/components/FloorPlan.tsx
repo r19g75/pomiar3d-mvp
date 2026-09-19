@@ -1,4 +1,5 @@
 import type { Area } from '../domain/model'
+import { labelOf } from '../domain/model'
 import { areaBounds, pointMap, rectCorners, wallLength } from '../domain/geometry'
 
 export function FloorPlan({ area, onSection, selectedWallId, onWallSelect, selectedPointId, onPointSelect, selectedShapeId, onShapeSelect }: {
@@ -49,7 +50,7 @@ export function FloorPlan({ area, onSection, selectedWallId, onWallSelect, selec
           return <g key={p.id} className="point-group" onClick={() => onPointSelect(p.id)}>
             <circle className="point-hit" cx={tx(p.position.x)} cy={ty(p.position.y)} r="380" />
             <circle className={`point ${p.source === 'measured' ? 'measured' : 'derived'} ${selected ? 'selected' : ''}`} cx={tx(p.position.x)} cy={ty(p.position.y)} r="34" />
-            <text x={tx(p.position.x) + 55} y={ty(p.position.y) - 55} className="svg-label">{p.id}</text>
+            <text x={tx(p.position.x) + 55} y={ty(p.position.y) - 55} className="svg-label">{labelOf(p)}</text>
           </g>
         })}
         {area.shapes.map((shape) => {

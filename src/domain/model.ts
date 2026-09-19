@@ -177,13 +177,20 @@ export type Project = {
 export const nowIso = () => new Date().toISOString()
 export const newId = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
 
+/** Najmniejszy wolny numer w serii prefix+cyfry (wykorzystuje luki po usuniętych elementach/etykietach). */
 export function nextElementId(existingIds: string[], prefix: string): string {
-  let max = -1
+  const used = new Set<number>()
   for (const id of existingIds) {
     const m = new RegExp(`^${prefix}(\\d+)$`).exec(id)
-    if (m) max = Math.max(max, Number(m[1]))
+    if (m) used.add(Number(m[1]))
   }
-  return `${prefix}${max + 1}`
+  let n = 0
+  while (used.has(n)) n++
+  return `${prefix}${n}`
+}
+
+export function labelOf(entity: { id: Id; label?: string }): string {
+  return entity.label ?? entity.id
 }
 
 export function makeEmptyArea(name: string, kind: AreaKind = 'room'): Area {

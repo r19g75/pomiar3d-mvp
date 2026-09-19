@@ -1,4 +1,5 @@
 import { newId, nowIso, type Area, type Project } from '../domain/model'
+import { checkPointIntegrity } from '../domain/integrity'
 
 type LegacyProject = {
   format: 'pomiar3d'; version: 1; id: string; name: string; units: 'mm'; updatedAt: string
@@ -44,6 +45,10 @@ export function validateProject(value: unknown): Project {
 }
 
 export function downloadProject(project: Project) {
+  for (const a of project.areas) {
+    const issues = checkPointIntegrity(a)
+    if (issues.length) console.warn(`Integralność „${a.name}” przy eksporcie:`, issues)
+  }
   const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
