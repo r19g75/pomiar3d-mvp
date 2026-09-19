@@ -213,8 +213,12 @@ export function StationsPanel({ area, onCreateSurvey, onAddTarget, onAddInstrume
       )}
 
       {selectedTarget && (
-        <div className="check-card">
-          <div className="card-title"><h3>{selectedTarget.label}</h3><span>{RESOLUTION_LABEL[(resolutions.get(selectedTarget.id) ?? { kind: 'none' }).kind]}</span></div>
+        <div className="bottom-sheet">
+          <div className="bottom-sheet-head">
+            <h3>{selectedTarget.label}</h3>
+            <span>{RESOLUTION_LABEL[(resolutions.get(selectedTarget.id) ?? { kind: 'none' }).kind]}</span>
+            <button className="secondary" onClick={() => setSelectedId(null)}>Zamknij</button>
+          </div>
           <div className="wall-edit">
             <label>Etykieta
               <input
@@ -255,13 +259,15 @@ export function StationsPanel({ area, onCreateSurvey, onAddTarget, onAddInstrume
             if (r?.kind === 'resolved3') return <div className="wall-info-row"><span>Residuum</span><strong>{r.residualMm.toFixed(1)} mm</strong></div>
             return null
           })()}
+          <button className="secondary wide" onClick={deleteSelected}>Usuń punkt</button>
         </div>
       )}
 
       {selectedInstrument && !selectedTarget && (
-        <div className="check-card">
-          <div className="card-title"><h3>{selectedInstrument.label}</h3></div>
+        <div className="bottom-sheet">
+          <div className="bottom-sheet-head"><h3>{selectedInstrument.label}</h3><button className="secondary" onClick={() => setSelectedId(null)}>Zamknij</button></div>
           <div className="wall-info-row"><span>Pozycja rozwiązana</span><strong>{resolvedInstruments.get(selectedInstrument.id) ? `${Math.round(resolvedInstruments.get(selectedInstrument.id)!.x)}, ${Math.round(resolvedInstruments.get(selectedInstrument.id)!.y)} mm` : 'brak bazy'}</strong></div>
+          <button className="secondary wide" onClick={deleteSelected}>Usuń pozycję</button>
         </div>
       )}
 

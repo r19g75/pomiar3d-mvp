@@ -25,6 +25,9 @@ button.wide { width: 100%; margin-top: 10px; }
 .badge.warn { background: #4a3510; color: #fbbf24; }
 .badge.ok { background: #0f3d2e; color: #34d399; }
 .error-text { color: #f87171; font-size: 13px; margin-top: 6px; }
+.bottom-sheet { position: fixed; left: 0; right: 0; bottom: 68px; z-index: 22; max-height: 45vh; min-height: 35vh; overflow-y: auto; background: #131b2c; border-top: 1px solid #263142; border-radius: 16px 16px 0 0; box-shadow: 0 -4px 16px rgba(0,0,0,.4); padding: 14px max(14px, env(safe-area-inset-right)) 14px max(14px, env(safe-area-inset-left)); }
+.bottom-sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.bottom-sheet-head h3 { margin: 0; }
 .warn-card { background: #4a3510; border: 1px solid #7c5a17; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
 .warn-card div { color: #fbbf24; font-size: 13px; margin: 3px 0; }
 nav { display: flex; overflow-x: auto; background: #0f1626; border-bottom: 1px solid #1f2937; position: sticky; top: 67px; z-index: 9; scrollbar-width: none; }
