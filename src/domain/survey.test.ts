@@ -66,6 +66,88 @@ describe('numeracja stanowisk z lukami (pkt: D0/D2 bez D1)', () => {
   })
 })
 
+describe('sprzeczna geometria vs brak odczytow (CLAUDE_CODE_FIX_FALSE_MISSING_P0)', () => {
+  const survey = makeSurvey({
+    instrumentPositions: [
+      { id: 'inst-D0', label: 'D0', sketch: { x: 0, y: 0 } },
+      { id: 'inst-D2', label: 'D2', sketch: { x: 1, y: 0 } }
+    ],
+    baselines: [{ fromInstrumentId: 'inst-D0', toInstrumentId: 'inst-D2', distanceMm: 3000 }],
+    targets: [
+      { id: 't-P0', label: 'P0', sketch: { x: 0.3, y: 1 }, order: 0 },
+      { id: 't-P2', label: 'P2', sketch: { x: 0.33, y: 1 }, order: 1 }
+    ],
+    observations: [
+      // P0: baza 3000 mm, ale odczyty daja okregi zbyt oddalone od siebie (r1+r2 = 1500 < 3000) -> sprzeczne
+      { id: 'o1', instrumentPositionId: 'inst-D0', targetId: 't-P0', distanceMm: 1000, source: 'manual' as const, createdAt: '' },
+      { id: 'o2', instrumentPositionId: 'inst-D2', targetId: 't-P0', distanceMm: 500, source: 'manual' as const, createdAt: '' },
+      // P2: spojne odczyty, powinien rozwiazac sie normalnie
+      { id: 'o3', instrumentPositionId: 'inst-D0', targetId: 't-P2', distanceMm: 1803, source: 'manual' as const, createdAt: '' },
+      { id: 'o4', instrumentPositionId: 'inst-D2', targetId: 't-P2', distanceMm: 2500, source: 'manual' as const, createdAt: '' }
+    ]
+  })
+  const resolved = resolveInstrumentPositions(survey)
+
+  it('P0: dwa zapisane odczyty, ale geometria sprzeczna -> inconsistent, nie no-observations', () => {
+    const result = resolveTarget(survey.targets[0], survey, resolved)
+    expect(result.kind).toBe('inconsistent')
+    if (result.kind === 'inconsistent') {
+      expect(result.mismatchMm).toBeCloseTo(1500, 0)
+      expect(result.r1).toBe(1000)
+      expect(result.r2).toBe(500)
+    }
+    expect(targetStatus(result)).not.toBe('done')
+    expect(targetStatus(result)).not.toBe('none')
+  })
+
+  it('P2 w tym samym pomiarze rozwiazuje sie normalnie na zielono', () => {
+    const result = resolveTarget(survey.targets[1], survey, resolved)
+    expect(result.kind).toBe('sketch-picked')
+    expect(targetStatus(result)).toBe('done')
+  })
+
+  it('planTransfer dla P0=inconsistent zwraca komunikat o sprzecznej geometrii z niezgodnoscia w mm', () => {
+    const resolutions = new Map<string, TargetResolution>([
+      ['t-P0', resolveTarget(survey.targets[0], survey, resolved)],
+      ['t-P2', resolveTarget(survey.targets[1], survey, resolved)]
+    ])
+    const plan = planTransfer(makeArea([]), survey, resolutions)
+    expect(plan.ok).toBe(false)
+    if (!plan.ok) {
+      expect(plan.reason).toMatch(/sprzeczn/)
+      expect(plan.reason).toMatch(/1500/)
+    }
+  })
+
+  it('acceptedDespiteMismatch=true -> P0 rozwiazuje sie mimo sprzecznej geometrii (recznie zaakceptowane)', () => {
+    const acceptedP0 = { ...survey.targets[0], acceptedDespiteMismatch: true }
+    const result = resolveTarget(acceptedP0, survey, resolved)
+    expect(result.kind).toBe('accepted-mismatch')
+    if (result.kind === 'accepted-mismatch') {
+      expect(result.mismatchMm).toBeCloseTo(1500, 0)
+      expect(Number.isFinite(result.point.x)).toBe(true)
+      expect(Number.isFinite(result.point.y)).toBe(true)
+    }
+    expect(targetStatus(result)).not.toBe('none')
+    expect(targetStatus(result)).not.toBe('done')
+  })
+
+  it('planTransfer przechodzi gdy P0 ma zaakceptowana niezgodnosc', () => {
+    const acceptedP0 = { ...survey.targets[0], acceptedDespiteMismatch: true }
+    const acceptedSurvey = { ...survey, targets: [acceptedP0, survey.targets[1]] }
+    const resolutions = new Map<string, TargetResolution>([
+      ['t-P0', resolveTarget(acceptedP0, acceptedSurvey, resolved)],
+      ['t-P2', resolveTarget(acceptedSurvey.targets[1], acceptedSurvey, resolved)]
+    ])
+    const plan = planTransfer(makeArea([]), acceptedSurvey, resolutions)
+    expect(plan.ok).toBe(true)
+    if (plan.ok) {
+      const p0 = plan.items.find((i) => i.label === 'P0')!
+      expect(p0.position.x).toBeCloseTo(0, 6); expect(p0.position.y).toBeCloseTo(0, 6)
+    }
+  })
+})
+
 describe('resolveTarget', () => {
   const baseSurvey = makeSurvey({
     instrumentPositions: [
@@ -80,9 +162,9 @@ describe('resolveTarget', () => {
   })
   const resolved = resolveInstrumentPositions(baseSurvey)
 
-  it('brak odczytow -> none', () => {
+  it('brak odczytow -> no-observations', () => {
     const target = { id: 'P1', label: 'P1', sketch: { x: 0.3, y: 1 }, order: 0 }
-    expect(resolveTarget(target, baseSurvey, resolved)).toEqual({ kind: 'none' })
+    expect(resolveTarget(target, baseSurvey, resolved)).toEqual({ kind: 'no-observations' })
   })
 
   it('jeden odczyt -> insufficient', () => {

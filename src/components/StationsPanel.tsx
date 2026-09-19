@@ -2,21 +2,23 @@ import { useMemo, useState } from 'react'
 import type { Area, StationSurvey } from '../domain/model'
 import { newId, nextElementId } from '../domain/model'
 import { checkPointIntegrity } from '../domain/integrity'
-import { baselineBetween, planTransfer, resolveInstrumentPositions, resolveTarget, targetStatus, type TargetResolution, type TransferItem } from '../domain/survey'
+import { baselineBetween, hasCompleteReadings, planTransfer, resolveInstrumentPositions, resolveTarget, targetStatus, type TargetResolution, type TransferItem } from '../domain/survey'
 import { SketchCanvas, type SketchEdge, type SketchNode } from './SketchCanvas'
 
 type AddMode = 'target' | 'instrument' | null
 
 const RESOLUTION_LABEL: Record<TargetResolution['kind'], string> = {
-  none: 'okręgi się nie przecinają',
+  'no-observations': 'brak odczytów',
   insufficient: 'potrzebny drugi odczyt',
+  inconsistent: 'komplet odczytów, ale geometria sprzeczna',
+  'accepted-mismatch': 'zaakceptowano mimo niezgodności',
   unique: 'rozwiązanie jednoznaczne',
   'sketch-picked': 'strona wybrana ze szkicu',
   ambiguous: 'dwa rozwiązania — wybierz',
   resolved3: 'rozstrzygnięte trzecim odczytem'
 }
 
-export function StationsPanel({ area, onCreateSurvey, onAddTarget, onAddInstrument, onMoveNode, onDeleteNode, onAddBaseline, onAddObservation, onAddEdge, onRestoreSurvey, onTransferToRzut, onRepairLabels, onRenameTarget, onSetTargetOrigin }: {
+export function StationsPanel({ area, onCreateSurvey, onAddTarget, onAddInstrument, onMoveNode, onDeleteNode, onAddBaseline, onAddObservation, onAddEdge, onRestoreSurvey, onTransferToRzut, onRepairLabels, onRenameTarget, onSetTargetOrigin, onSetAcceptMismatch }: {
   area: Area
   onCreateSurvey: (name: string) => void
   onAddTarget: (surveyId: string, id: string, label: string, x: number, y: number) => void
@@ -31,6 +33,7 @@ export function StationsPanel({ area, onCreateSurvey, onAddTarget, onAddInstrume
   onRepairLabels: () => void
   onRenameTarget: (surveyId: string, targetId: string, newLabel: string) => string | undefined
   onSetTargetOrigin: (surveyId: string, targetId: string) => void
+  onSetAcceptMismatch: (surveyId: string, targetId: string, accepted: boolean) => void
 }) {
   const surveys = area.stationSurveys ?? []
   const survey = surveys[surveys.length - 1]
@@ -145,7 +148,7 @@ export function StationsPanel({ area, onCreateSurvey, onAddTarget, onAddInstrume
   }
 
   const sketchNodes: SketchNode[] = [
-    ...survey.targets.map((t): SketchNode => ({ id: t.id, label: t.label, x: t.sketch.x, y: t.sketch.y, kind: 'target', status: targetStatus(resolutions.get(t.id) ?? { kind: 'none' }) })),
+    ...survey.targets.map((t): SketchNode => ({ id: t.id, label: t.label, x: t.sketch.x, y: t.sketch.y, kind: 'target', status: targetStatus(resolutions.get(t.id) ?? { kind: 'no-observations' }) })),
     ...survey.instrumentPositions.map((p): SketchNode => ({ id: p.id, label: p.label, x: p.sketch.x, y: p.sketch.y, kind: 'instrument' }))
   ]
   const sketchEdges: SketchEdge[] = survey.sketchEdges
@@ -177,11 +180,15 @@ export function StationsPanel({ area, onCreateSurvey, onAddTarget, onAddInstrume
     })
   ] : []
 
-  const doneCount = survey.targets.filter((t) => targetStatus(resolutions.get(t.id) ?? { kind: 'none' }) === 'done').length
+  const doneCount = survey.targets.filter((t) => targetStatus(resolutions.get(t.id) ?? { kind: 'no-observations' }) === 'done').length
+  const readingsCompleteCount = survey.targets.filter((t) => hasCompleteReadings(resolutions.get(t.id) ?? { kind: 'no-observations' })).length
 
   return (
     <div className="list-card">
-      <div className="card-title"><h2>Stanowiska — {survey.name}</h2><span>{doneCount}/{survey.targets.length} punktów gotowych</span></div>
+      <div className="card-title">
+        <h2>Stanowiska — {survey.name}</h2>
+        <span>{readingsCompleteCount}/{survey.targets.length} z kompletem pomiarów · {doneCount}/{survey.targets.length} rozwiązanych geometrycznie</span>
+      </div>
       <p className="muted"><small>Szkic orientacyjny — proporcje nie muszą być dokładne. Stanowisko/pozycja dalmierza oznacza jego punkt odniesienia; przy obrocie powinien pozostawać możliwie stały.</small></p>
 
       {integrityIssues.length > 0 && (
@@ -227,7 +234,7 @@ export function StationsPanel({ area, onCreateSurvey, onAddTarget, onAddInstrume
         <div className="bottom-sheet">
           <div className="bottom-sheet-head">
             <h3>{selectedTarget.label}</h3>
-            <span>{RESOLUTION_LABEL[(resolutions.get(selectedTarget.id) ?? { kind: 'none' }).kind]}</span>
+            <span>{RESOLUTION_LABEL[(resolutions.get(selectedTarget.id) ?? { kind: 'no-observations' }).kind]}</span>
             <button className="secondary" onClick={() => setSelectedId(null)}>Zamknij</button>
           </div>
           <div className="wall-edit">
@@ -268,6 +275,22 @@ export function StationsPanel({ area, onCreateSurvey, onAddTarget, onAddInstrume
           {(() => {
             const r = resolutions.get(selectedTarget.id)
             if (r?.kind === 'resolved3') return <div className="wall-info-row"><span>Residuum</span><strong>{r.residualMm.toFixed(1)} mm</strong></div>
+            if (r?.kind === 'inconsistent' || r?.kind === 'accepted-mismatch') {
+              const label1 = survey.instrumentPositions.find((p) => p.id === r.instrument1Id)?.label ?? r.instrument1Id
+              const label2 = survey.instrumentPositions.find((p) => p.id === r.instrument2Id)?.label ?? r.instrument2Id
+              return (
+                <div className="warn-card">
+                  <div>{label1}: {r.r1} mm ✓</div>
+                  <div>{label2}: {r.r2} mm ✓</div>
+                  <div>baza {label1}–{label2}: {Math.round(r.baselineMm)} mm ✓</div>
+                  <div>wynik: {r.kind === 'accepted-mismatch' ? 'zaakceptowano mimo niezgodności' : 'pomiary geometrycznie sprzeczne'}</div>
+                  <div>niezgodność: {Math.round(r.mismatchMm)} mm</div>
+                  {r.kind === 'inconsistent'
+                    ? <button className="secondary wide" onClick={() => onSetAcceptMismatch(survey.id, selectedTarget.id, true)}>Zaakceptuj mimo niezgodności</button>
+                    : <button className="secondary wide" onClick={() => onSetAcceptMismatch(survey.id, selectedTarget.id, false)}>Cofnij akceptację</button>}
+                </div>
+              )
+            }
             return null
           })()}
           <button className="secondary wide" onClick={deleteSelected}>Usuń punkt</button>

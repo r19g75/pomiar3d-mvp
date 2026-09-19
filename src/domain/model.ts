@@ -55,6 +55,8 @@ export type SurveyTarget = {
   note?: string
   linkedPointId?: Id
   resolved?: { x: number; y: number; z?: number; method: 'two-station' | 'multi-station'; residualMm?: number }
+  /** Uzytkownik recznie zaakceptowal geometrycznie sprzeczne odczyty (np. tolerancja pomiarow budowlanych). */
+  acceptedDespiteMismatch?: boolean
 }
 
 /** Pozycja dalmierza (D1, D2...) - bez wymaganych XYZ, tylko orientacyjny szkic + rozwiązanie z bazy. */

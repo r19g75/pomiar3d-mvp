@@ -1,6 +1,6 @@
 import type { Area, StationSurvey, SurveyInstrumentPosition, SurveyTarget } from './model'
 import { labelOf } from './model'
-import { circleIntersections, pickByThirdStation, type Vec2 } from './trilateration'
+import { circleBestFit, circleIntersections, pickByThirdStation, type Vec2 } from './trilateration'
 
 export const RESIDUAL_WARN_MM = 50
 
@@ -45,8 +45,10 @@ export function resolveInstrumentPositions(survey: StationSurvey): ResolvedInstr
 }
 
 export type TargetResolution =
-  | { kind: 'none' }
+  | { kind: 'no-observations' }
   | { kind: 'insufficient' }
+  | { kind: 'inconsistent'; instrument1Id: string; instrument2Id: string; baselineMm: number; r1: number; r2: number; mismatchMm: number }
+  | { kind: 'accepted-mismatch'; point: Vec2; instrument1Id: string; instrument2Id: string; baselineMm: number; r1: number; r2: number; mismatchMm: number }
   | { kind: 'unique'; point: Vec2 }
   | { kind: 'sketch-picked'; point: Vec2 }
   | { kind: 'ambiguous'; points: [Vec2, Vec2] }
@@ -67,12 +69,22 @@ export function resolveTarget(target: SurveyTarget, survey: StationSurvey, resol
     .map(([instId, distanceMm]) => ({ inst: survey.instrumentPositions.find((p) => p.id === instId), pos: resolvedInstruments.get(instId), distanceMm }))
     .filter((e): e is { inst: SurveyInstrumentPosition; pos: { x: number; y: number; z: number }; distanceMm: number } => !!e.inst && !!e.pos)
 
-  if (entries.length === 0) return { kind: 'none' }
+  if (entries.length === 0) return { kind: 'no-observations' }
   if (entries.length < 2) return { kind: 'insufficient' }
 
   const [a, b, c] = entries
   const candidates = circleIntersections({ x: a.pos.x, y: a.pos.y }, a.distanceMm, { x: b.pos.x, y: b.pos.y }, b.distanceMm)
-  if (candidates.length === 0) return { kind: 'none' }
+  if (candidates.length === 0) {
+    const baselineMm = Math.hypot(b.pos.x - a.pos.x, b.pos.y - a.pos.y)
+    const mismatchMm = baselineMm > a.distanceMm + b.distanceMm
+      ? baselineMm - (a.distanceMm + b.distanceMm)
+      : Math.abs(a.distanceMm - b.distanceMm) - baselineMm
+    if (target.acceptedDespiteMismatch) {
+      const point = circleBestFit({ x: a.pos.x, y: a.pos.y }, a.distanceMm, { x: b.pos.x, y: b.pos.y }, b.distanceMm)
+      return { kind: 'accepted-mismatch', point, instrument1Id: a.inst.id, instrument2Id: b.inst.id, baselineMm, r1: a.distanceMm, r2: b.distanceMm, mismatchMm }
+    }
+    return { kind: 'inconsistent', instrument1Id: a.inst.id, instrument2Id: b.inst.id, baselineMm, r1: a.distanceMm, r2: b.distanceMm, mismatchMm }
+  }
   if (candidates.length === 1) return { kind: 'unique', point: candidates[0] }
 
   if (c) {
@@ -92,7 +104,7 @@ export function resolveTarget(target: SurveyTarget, survey: StationSurvey, resol
 
 export function resolvedPointOf(r: TargetResolution): Vec2 | null {
   switch (r.kind) {
-    case 'unique': case 'sketch-picked': case 'resolved3': return r.point
+    case 'unique': case 'sketch-picked': case 'resolved3': case 'accepted-mismatch': return r.point
     default: return null
   }
 }
@@ -100,10 +112,11 @@ export function resolvedPointOf(r: TargetResolution): Vec2 | null {
 export type TransferItem = { targetId: string; label: string; position: { x: number; y: number; z: number }; reuseAreaPointId?: string }
 export type TransferPlan = { ok: true; items: TransferItem[]; conflicts: string[] } | { ok: false; reason: string }
 
-function p0BlockReason(kind: TargetResolution['kind']): string {
-  switch (kind) {
-    case 'none': return 'Nie można ustawić początku układu — brak odczytów odległości do P0 (potrzebne co najmniej dwa, z różnych pozycji dalmierza).'
+function p0BlockReason(resolution: TargetResolution): string {
+  switch (resolution.kind) {
+    case 'no-observations': return 'Nie można ustawić początku układu — brak odczytów odległości do P0 (potrzebne co najmniej dwa, z różnych pozycji dalmierza).'
     case 'insufficient': return 'Nie można ustawić początku układu — do P0 jest tylko jeden odczyt. Dodaj odczyt z drugiej pozycji dalmierza i sprawdź, czy zapisana jest baza między pozycjami.'
+    case 'inconsistent': return `P0 ma zapisane oba odczyty, ale są geometrycznie sprzeczne z bazą między pozycjami. Niezgodność: ${Math.round(resolution.mismatchMm)} mm — sprawdź bazę albo jeden z pomiarów.`
     case 'ambiguous': return 'Nie można ustawić początku układu — P0 ma dwa możliwe rozwiązania (niejednoznaczne). Dodaj trzeci odczyt albo popraw szkic.'
     default: return 'Nie można jeszcze ustawić początku układu — P0 nie jest jeszcze rozwiązany.'
   }
@@ -117,14 +130,14 @@ function p0BlockReason(kind: TargetResolution['kind']): string {
 export function planTransfer(area: Area, survey: StationSurvey, resolutions: Map<string, TargetResolution>): TransferPlan {
   const p0Target = survey.targets.find((t) => labelOf(t) === 'P0')
   if (!p0Target) return { ok: false, reason: 'Szkic nie ma jeszcze punktu P0 — dodaj punkt, który będzie początkiem układu.' }
-  const p0Resolution = resolutions.get(p0Target.id) ?? { kind: 'none' }
+  const p0Resolution = resolutions.get(p0Target.id) ?? { kind: 'no-observations' }
   const p0Point = resolvedPointOf(p0Resolution)
-  if (!p0Point) return { ok: false, reason: p0BlockReason(p0Resolution.kind) }
+  if (!p0Point) return { ok: false, reason: p0BlockReason(p0Resolution) }
 
   const items: TransferItem[] = []
   const conflicts: string[] = []
   for (const t of survey.targets) {
-    const point = resolvedPointOf(resolutions.get(t.id) ?? { kind: 'none' })
+    const point = resolvedPointOf(resolutions.get(t.id) ?? { kind: 'no-observations' })
     if (!point) continue
     const label = labelOf(t)
     const position = { x: point.x - p0Point.x, y: point.y - p0Point.y, z: 0 }
@@ -140,10 +153,17 @@ export type TargetStatus = 'none' | 'partial' | 'done' | 'warn'
 
 export function targetStatus(resolution: TargetResolution): TargetStatus {
   switch (resolution.kind) {
-    case 'none': return 'none'
+    case 'no-observations': return 'none'
     case 'insufficient': return 'partial'
     case 'ambiguous': return 'warn'
+    case 'inconsistent': return 'warn'
+    case 'accepted-mismatch': return 'warn'
     case 'resolved3': return resolution.residualMm > RESIDUAL_WARN_MM ? 'warn' : 'done'
     default: return 'done'
   }
+}
+
+/** Czy do targetu zapisano komplet (min. 2) uzytecznych odczytow - niezaleznie od tego, czy dają spojna geometrie. */
+export function hasCompleteReadings(resolution: TargetResolution): boolean {
+  return resolution.kind !== 'no-observations' && resolution.kind !== 'insufficient'
 }

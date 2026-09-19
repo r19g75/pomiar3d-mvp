@@ -329,6 +329,11 @@ export default function App() {
     }, () => ({ summary: `Ustawiono ${targetId} jako P0 w szkicu` }))
   }
 
+  const setTargetAcceptMismatch = (surveyId: string, targetId: string, accepted: boolean) => {
+    updateSurvey(surveyId, (s) => ({ ...s, targets: s.targets.map((t) => t.id === targetId ? { ...t, acceptedDespiteMismatch: accepted } : t) }),
+      () => ({ summary: accepted ? `Zaakceptowano niezgodność geometrii dla ${targetId}` : `Cofnięto akceptację niezgodności dla ${targetId}` }))
+  }
+
   const transferSurveyTargets = (surveyId: string, items: TransferItem[], withEdges: boolean) => {
     updateArea((a) => {
       const surveys = a.stationSurveys ?? []
@@ -554,6 +559,7 @@ export default function App() {
                 onRepairLabels={repairAreaLabels}
                 onRenameTarget={renameSurveyTargetLabel}
                 onSetTargetOrigin={setSurveyTargetOrigin}
+                onSetAcceptMismatch={setTargetAcceptMismatch}
               />
             )}
           </main>

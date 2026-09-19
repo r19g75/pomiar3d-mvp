@@ -35,6 +35,20 @@ export function circleIntersections(s1: Vec2, r1: number, s2: Vec2, r2: number):
 }
 
 /**
+ * Punkt "najlepszego dopasowania" dla dwóch okręgów, które się nie przecinają (sprzeczne odczyty).
+ * Rzut na prostą łączącą stanowiska, w miejscu gdzie okręgi byłyby najbliżej przecięcia.
+ * Używane tylko gdy użytkownik świadomie akceptuje niezgodność pomiarów (np. tolerancja budowlana).
+ */
+export function circleBestFit(s1: Vec2, r1: number, s2: Vec2, r2: number): Vec2 {
+  const dx = s2.x - s1.x
+  const dy = s2.y - s1.y
+  const d = Math.hypot(dx, dy)
+  if (d < EPS) return { x: s1.x, y: s1.y }
+  const a = (r1 * r1 - r2 * r2 + d * d) / (2 * d)
+  return { x: s1.x + (a * dx) / d, y: s1.y + (a * dy) / d }
+}
+
+/**
  * Rozstrzyga niejednoznaczność dwóch kandydatów za pomocą trzeciego stanowiska.
  * Wybiera kandydata z mniejszym residuum, ale zawsze zwraca residuum obu stron -
  * UI powinien oznaczyć punkt do kontroli, jeśli residuum jest duże.
