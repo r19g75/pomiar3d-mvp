@@ -13,7 +13,7 @@ import { SessionPanel } from './components/SessionPanel'
 import { executeCommand } from './commands/parser'
 import { downloadProject, readProjectFile } from './io/projectFile'
 import { loadProject, saveProject } from './storage/db'
-import { areaMissingCount, movePointForLength, pointMap, wallLength } from './domain/geometry'
+import { areaMissingCount, effectiveThicknessSide, movePointForLength, pointMap, wallLength } from './domain/geometry'
 import { addHistory, removeArea, setAreaArchived, withArea } from './domain/operations'
 import { makeDemoProject, makeEmptyArea, newId, nextElementId, nowIso, type Area, type AreaKind, type ElementState, type Project, type StationSurvey } from './domain/model'
 import { checkPointIntegrity, renamePointLabel, repairDuplicateLabels, setPointAsOrigin } from './domain/integrity'
@@ -160,7 +160,7 @@ export default function App() {
     updateArea((a) => {
       const wall = a.walls.find((w) => w.id === wallId)
       if (!wall) return a
-      const oldSide = wall.thicknessSide ?? 1
+      const oldSide = effectiveThicknessSide(wall, a)
       const newSide: 1 | -1 = oldSide === 1 ? -1 : 1
       const walls = a.walls.map((w) => w.id === wallId ? { ...w, thicknessSide: newSide } : w)
       return addHistory({ ...a, walls }, {

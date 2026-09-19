@@ -1,7 +1,73 @@
-import type { Area, Point3D, Shape, Vec3, Wall } from './model'
+import type { Area, Id, Point3D, Shape, Vec3, Wall } from './model'
 
 export function pointMap(area: Area) {
   return new Map(area.points.map((p) => [p.id, p]))
+}
+
+/**
+ * Znajduje zamknięty obrys zawierający daną ścianę (przechodząc przez sąsiednie ściany
+ * po dokładnie jednej niekończącej się gałęzi). Zwraca null przy rozgałęzieniach/otwartych
+ * fragmentach - w takich sytuacjach strona grubości musi być ustawiona ręcznie.
+ */
+export function findClosedLoop(wall: Wall, walls: Wall[]): Id[] | null {
+  const adjacency = new Map<Id, { to: Id; wallId: Id }[]>()
+  for (const w of walls) {
+    if (!adjacency.has(w.from)) adjacency.set(w.from, [])
+    if (!adjacency.has(w.to)) adjacency.set(w.to, [])
+    adjacency.get(w.from)!.push({ to: w.to, wallId: w.id })
+    adjacency.get(w.to)!.push({ to: w.from, wallId: w.id })
+  }
+  const start = wall.from
+  const loop: Id[] = [start]
+  let current = wall.to
+  let cameFromWallId = wall.id
+  const visitedWalls = new Set([wall.id])
+  while (current !== start) {
+    loop.push(current)
+    const neighbors = (adjacency.get(current) ?? []).filter((n) => n.wallId !== cameFromWallId)
+    if (neighbors.length !== 1) return null
+    const next = neighbors[0]
+    if (visitedWalls.has(next.wallId)) return null
+    visitedWalls.add(next.wallId)
+    cameFromWallId = next.wallId
+    current = next.to
+  }
+  return loop.length >= 3 ? loop : null
+}
+
+export function signedPolygonArea(points: { x: number; y: number }[]): number {
+  let sum = 0
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i]; const b = points[(i + 1) % points.length]
+    sum += a.x * b.y - b.x * a.y
+  }
+  return sum / 2
+}
+
+/**
+ * Wykrywa kierunek obiegu zamkniętego obrysu zawierającego ścianę i zwraca stronę,
+ * po której grubość wypada na zewnątrz. Zwraca null gdy obrys nie jest jednoznaczny
+ * (rozgałęzienia, otwarty fragment) - wtedy potrzebna jest ręczna decyzja użytkownika.
+ */
+export function autoThicknessSide(wall: Wall, area: Area): 1 | -1 | null {
+  const loop = findClosedLoop(wall, area.walls)
+  if (!loop) return null
+  const points = pointMap(area)
+  const loopPts = loop.map((id) => points.get(id)?.position)
+  if (loopPts.some((p) => !p)) return null
+  const signedArea = signedPolygonArea(loopPts as Vec3[])
+  if (signedArea === 0) return null
+  const isCCW = signedArea > 0
+  const a = points.get(wall.from)!.position; const b = points.get(wall.to)!.position
+  const dxw = b.x - a.x; const dyw = b.y - a.y
+  const outward = isCCW ? { x: dyw, y: -dxw } : { x: -dyw, y: dxw }
+  const n = { x: -dyw, y: dxw }
+  return outward.x * n.x + outward.y * n.y >= 0 ? 1 : -1
+}
+
+/** Strona grubości do rysowania: ręczne ustawienie ma priorytet, inaczej auto-wykrycie z obrysu, inaczej domyślnie 1. */
+export function effectiveThicknessSide(wall: Wall, area: Area): 1 | -1 {
+  return wall.thicknessSide ?? autoThicknessSide(wall, area) ?? 1
 }
 
 export function wallLength(wall: Wall, points: Map<string, Point3D>) {

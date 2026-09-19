@@ -1,6 +1,6 @@
 import type { Area } from '../domain/model'
 import { labelOf } from '../domain/model'
-import { areaBounds, pointMap, rectCorners, wallLength } from '../domain/geometry'
+import { areaBounds, effectiveThicknessSide, pointMap, rectCorners, wallLength } from '../domain/geometry'
 
 export function FloorPlan({ area, onSection, selectedWallId, onWallSelect, selectedPointId, onPointSelect, selectedShapeId, onShapeSelect }: {
   area: Area
@@ -34,7 +34,7 @@ export function FloorPlan({ area, onSection, selectedWallId, onWallSelect, selec
           const dxw = c.position.x - a.position.x; const dyw = c.position.y - a.position.y
           const lenw = Math.hypot(dxw, dyw) || 1
           const nxw = -dyw / lenw; const nyw = dxw / lenw
-          const side = wall.thicknessSide ?? 1
+          const side = effectiveThicknessSide(wall, area)
           const midW = { x: (a.position.x + c.position.x) / 2, y: (a.position.y + c.position.y) / 2 }
           const tickW = { x: midW.x + nxw * side * 220, y: midW.y + nyw * side * 220 }
           return <g key={wall.id} className="wall-group" onClick={() => onWallSelect(wall.id)}>
